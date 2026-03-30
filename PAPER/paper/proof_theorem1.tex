@@ -1,0 +1,222 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[vietnamese]{babel}
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage{enumitem}
+\usepackage[margin=2.5cm]{geometry}
+
+\newtheorem{theorem}{Định lý}
+\newtheorem{assumption}{Giả thiết}
+\newtheorem{definition}{Định nghĩa}
+\newtheorem{lemma}{Bổ đề}
+\newtheorem{remark}{Nhận xét}
+\newtheorem{corollary}{Hệ quả}
+
+\newcommand{\erank}{\mathrm{erank}}
+\newcommand{\rank}{\mathrm{rank}}
+\newcommand{\RR}{\mathbb{R}}
+\newcommand{\EE}{\mathbb{E}}
+\newcommand{\cL}{\mathcal{L}}
+\newcommand{\cS}{\mathcal{S}}
+\newcommand{\Tr}{\mathrm{Tr}}
+
+\title{Chứng minh chi tiết Theorem 1: \\ Suy giảm hạng hiệu dụng dưới cập nhật bậc nhất}
+\author{}
+\date{}
+
+\begin{document}
+\maketitle
+
+%=======================================================================
+\section{Ký hiệu và thiết lập}
+%=======================================================================
+
+\paragraph{Ma trận trọng số.}
+Xét một lớp (layer) có ma trận trọng số $W \in \RR^{m \times n}$ với phân tích giá trị suy biến (SVD) rút gọn:
+\[
+W = U \Sigma V^\top, \quad \Sigma = \mathrm{diag}(\sigma_1, \sigma_2, \ldots, \sigma_r), \quad r = \min(m, n),
+\]
+trong đó $\sigma_1 \geq \sigma_2 \geq \cdots \geq \sigma_r \geq 0$.
+
+\begin{definition}[Hạng hiệu dụng dựa trên năng lượng phổ]
+\label{def:erank}
+Hạng hiệu dụng của $W$ (theo biến thể năng lượng phổ, sử dụng rộng rãi trong phân tích mạng neuron~\cite{he2024spectral, lewandowski2025spectral}) được định nghĩa là:
+\[
+\erank(W) = \exp\!\left(-\sum_{i=1}^{r} p_i \log p_i\right), \quad p_i = \frac{\sigma_i^2}{\sum_{j=1}^r \sigma_j^2} = \frac{\sigma_i^2}{\|W\|_F^2}.
+\]
+Đây là hàm mũ của entropy Shannon của phân phối năng lượng phổ $\{p_i\}$, với quy ước $0 \log 0 = 0$.
+\begin{itemize}[nosep]
+    \item Khi tất cả $\sigma_i$ bằng nhau: $p_i = 1/r \Rightarrow \erank(W) = r$ (tối đa).
+    \item Khi một $\sigma_1$ chi phối: $p_1 \approx 1, p_{i>1} \approx 0 \Rightarrow \erank(W) \to 1$ (tập trung hạng).
+\end{itemize}
+\end{definition}
+
+\paragraph{Không gian các ma trận.}
+Ta làm việc trong không gian vector $\RR^{m \times n}$ với tích vô hướng Frobenius $\langle A, B \rangle_F = \Tr(A^\top B)$.
+
+%=======================================================================
+\section{Các giả thiết}
+%=======================================================================
+
+\begin{assumption}[Gradient hạng thấp]
+\label{ass:low_rank_grad}
+Tại mỗi bước $t$, gradient $G_t = \nabla_W \cL_t \in \RR^{m \times n}$ có hạng xấp xỉ thấp.
+\end{assumption}
+
+\begin{assumption}[Không gian con gradient ổn định]
+\label{ass:subspace_stable}
+Tồn tại một không gian con $\cS \subset \RR^{m \times n}$ có chiều $d_{\cS} \ge \rank(G_t)$ và hằng số $\mu \in [0, 1)$ sao cho:
+\[
+G_t = G_t^{\cS} + G_t^{\perp}, \quad G_t^{\cS} = \Pi_{\cS} G_t, \quad G_t^{\perp} = \Pi_{\cS^\perp} G_t, \quad \text{với} \quad \|G_t^{\perp}\|_F \leq \mu \|G_t\|_F.
+\]
+Trường hợp $\mu = 0$ nghĩa là gradient hoàn toàn nằm trong $\cS$. Nỗ lực rò rỉ (leakage) tỉ lệ với $\mu > 0$.
+\end{assumption}
+
+\begin{assumption}[Cấu trúc Rank của Subspace]
+\label{ass:rank_structure}
+Không gian con $\cS$ được sinh bởi các ma trận có đặc tính rank-1 (ví dụ như tích ngoài outer-product của pre-activation và output gradient trong MLP). Cụ thể, mọi ma trận $A \in \cS$ đều thỏa mãn:
+\[
+\rank(A) \leq d_{\cS}.
+\]
+\end{assumption}
+
+\begin{assumption}[Gradient Coherence tích lũy (Persistent Excitation)]
+\label{ass:persistent}
+Không gian con gradient nhận được xung năng lượng đồng nhất không bị triệt tiêu chéo. Cụ thể, tồn tại hằng số $g_{\min} > 0$ và tỉ lệ tương quan trung bình mạnh $\alpha \in (0,1]$ sao cho:
+\[
+\frac{1}{T^2} \left\| \sum_{t=0}^{T-1} G_t^{\cS} \right\|_F^2 \geq \alpha^2 g_{\min}^2 > 0 \quad \text{khi } T \to \infty.
+\]
+Kịch bản này xảy ra khi gradient bị kỳ vọng (drift) dồn vào một hướng nhất định (non-zero mean $\bar{G} \neq 0$), thay vì chỉ là biến động ngẫu nhiên xung quanh 0.
+\end{assumption}
+
+\begin{assumption}[Learning rate cố định]
+Learning rate $\eta > 0$ là hằng số.
+\end{assumption}
+
+%=======================================================================
+\section{Phát biểu định lý}
+%=======================================================================
+
+\begin{theorem}[Suy giảm hạng hiệu dụng dưới cập nhật bậc nhất]
+\label{thm:rank_decay}
+Dưới các Giả thiết từ 1 đến 5, với quy tắc cập nhật $W_{t+1} = W_t - \eta\, G_t$:
+\begin{enumerate}[label=(\roman*)]
+    \item \textbf{Thành phần trực giao bị kìm chế:} $\|W_T^{\cS^\perp} - W_0^{\cS^\perp}\|_F \leq \eta \mu \sum_{t=0}^{T-1} \|G_t\|_F$.  Khi $\mu = 0$, $W_T^{\cS^\perp} = W_0^{\cS^\perp}$ (đóng băng chính xác).
+    
+    \item \textbf{Năng lượng trong $\cS$ chiếm ưu thế:} Khi $T \to \infty$ và rò rỉ tăng trưởng chậm hơn tín hiệu trong $\cS$ (tức $\mu \sum_t \|G_t\|_F = o(\|\sum_t G_t^{\cS}\|_F)$), ta có tỉ số năng lượng thành phần vượt trội:
+    \[
+    \lim_{T \to \infty} \frac{\|W_T^{\cS}\|_F^2}{\|W_T\|_F^2} = 1.
+    \]
+    
+    \item \textbf{Hạng hiệu dụng suy giảm tiệm cận:} Đặt $\delta(T) = \frac{\|W_T^{\cS^\perp}\|_F^2}{\|W_T\|_F^2}$, ta có giới hạn trên:
+    \[
+    \erank(W_T) \leq d_{\cS} \cdot \left(\frac{r - d_{\cS}}{\delta(T)}\right)^{\delta(T)}.
+    \]
+    Cụ thể, khi $\delta(T) \to 0$ (thoả mãn khi tín hiệu trong $\cS$ tích luỹ vượt quá rò rỉ $\cS^\perp$), ta thu được:
+    \[
+    \lim_{T \to \infty} \erank(W_T) \leq d_{\cS}.
+    \]
+\end{enumerate}
+\end{theorem}
+
+%=======================================================================
+\section{Chứng minh chi tiết}
+%=======================================================================
+
+\subsection{Bước 1 \& 2: Phân rã trực giao và kìm chế $\cS^\perp$}
+
+Phân rã trọng số $W_t = W_t^{\cS} + W_t^{\cS^\perp}$ lên $\cS$ và $\cS^\perp$. Quy tắc cập nhật chiếu xuống là:
+\begin{align*}
+W_{t+1}^{\cS} &= W_t^{\cS} - \eta\, G_t^{\cS}, \\
+W_{t+1}^{\cS^\perp} &= W_t^{\cS^\perp} - \eta\, G_t^{\perp}. 
+\end{align*}
+Áp dụng tổng chuỗi (telescoping sum) và bất đẳng thức tam giác cho $\cS^\perp$:
+\[
+\|W_T^{\cS^\perp} - W_0^{\cS^\perp}\|_F = \left\| \eta \sum_{t=0}^{T-1} G_t^{\perp} \right\|_F \leq \eta \sum_{t=0}^{T-1} \|G_t^{\perp}\|_F \leq \eta \mu \sum_{t=0}^{T-1} \|G_t\|_F.
+\]
+Khi $\mu = 0$, phần trực giao bị đóng băng hoàn toàn: $W_T^{\cS^\perp} = W_0^{\cS^\perp}$. Bằng bất đẳng thức tam giác, ta có:
+\[
+\|W_T^{\cS^\perp}\|_F \le \|W_0^{\cS^\perp}\|_F + \eta \mu \sum_{t=0}^{T-1} \|G_t\|_F.
+\]
+
+\subsection{Bước 3: Tích lũy năng lượng Coherence trong $\cS$}
+
+Tổng hợp cập nhật trong không gian $\cS$:
+\[
+W_T^{\cS} = W_0^{\cS} - \eta \sum_{t=0}^{T-1} G_t^{\cS}.
+\]
+Lấy Frobenius norm bình phương:
+\[
+\|W_T^{\cS}\|_F^2 = \|W_0^{\cS}\|_F^2 - 2\eta \left\langle W_0^{\cS},\, \sum_t G_t^{\cS}\right\rangle_F + \eta^2 \left\|\sum_t G_t^{\cS}\right\|_F^2.
+\]
+Sử dụng bất đẳng thức Cauchy-Schwarz để chắn hạng tử ở giữa: $2\eta |\langle W_0^\cS, \sum G_t^\cS \rangle| \le 2\eta \|W_0^\cS\|_F \|\sum G_t^\cS\|_F$.
+Áp dụng \textbf{Giả thiết 4 (Gradient Coherence)}, với $T$ đủ lớn thì hạng tử bậc 2 chi phối hoàn toàn sự tăng trưởng:
+\[
+\|W_T^{\cS}\|_F^2 \geq \eta^2 \left\|\sum_{t=0}^{T-1} G_t^{\cS}\right\|_F^2 - 2\eta \|W_0^{\cS}\|_F \left\|\sum_{t=0}^{T-1} G_t^{\cS}\right\|_F \geq \eta^2 \alpha^2 g_{\min}^2 T^2 - O(T).
+\]
+Suy ra, khi $T \to \infty$, bậc năng lượng chính đạt $\|W_T^{\cS}\|_F = \Omega(T)$, tức $\|W_T^{\cS}\|_F^2 \to \infty$.
+
+\subsection{Bước 4: Cầu nối Eckart--Young từ Năng lượng Subspace ra Phổ suy biến}
+
+Khác với các chứng minh trước đây tính toán thừa tham số dao động, ta chỉ cần sử dụng định lý Eckart--Young tiêu chuẩn.
+
+\begin{lemma}[Tập trung phổ]
+\label{lem:energy_to_spectral}
+Cho $W = W^{\cS} + W^{\perp}$ với $\rank(W^{\cS}) \leq k$. Khi đó:
+\[
+\sum_{i=k+1}^{r} \sigma_i^2(W) \leq \|W^{\perp}\|_F^2.
+\]
+\end{lemma}
+\begin{proof}
+Theo định lý Eckart--Young--Mirsky, ma trận xấp xỉ rank-$k$ cực tiểu hoá khoảng cách Frobenius tốt nhất chính là SVD cắt cụt (truncated SVD) $W_k = \sum_{i=1}^k \sigma_i u_i v_i^\top$. Ta có khoảng cách từ $W$ đến $W_k$ chính là phần dư phổ: $\|W - W_k\|_F^2 = \sum_{i=k+1}^r \sigma_i^2$. \\
+Vì ma trận $W^{\cS}$ cũng thuôc tập các ma trận có hạng $\leq k$ (theo Giả thiết~\ref{ass:rank_structure} $k=d_{\cS}$), nó đóng vai trò là một xấp xỉ rank-$k$ (không nhất thiết tối ưu nhất). Suy ra:
+\[
+\sum_{i=k+1}^r \sigma_i^2 = \|W - W_k\|_F^2 \leq \|W - W^{\cS}\|_F^2 = \|W^{\perp}\|_F^2.
+\]
+\end{proof}
+
+\subsection{Bước 5: Liên kết Phổ suy biến với Hạng Hiệu dụng (Effective Rank)}
+
+\begin{lemma}[Chặn Entropy Shannon bằng phân khúc phổ]
+\label{lem:entropy_conc}
+Cho phân phối năng lượng phổ $\{p_i\}_{i=1}^r$ ($p_i = \sigma_i^2 / \|W\|_F^2$) sao cho $\sum_{i=d_{\cS}+1}^r p_i \le \delta$, tức $\sum_{i=1}^{d_{\cS}} p_i \geq 1-\delta$ với $\delta \in [0,1)$. Thì:
+\[
+\erank(W) \leq d_{\cS} \cdot \left(\frac{r-d_{\cS}}{\delta}\right)^{\delta} \xrightarrow{\delta \to 0} d_{\cS}.
+\]
+\end{lemma}
+\begin{proof}
+Xét Maximum Entropy Principle. Ta chia phổ làm hai nhóm $A=\{1, \dots, d_{\cS}\}$ và $B=\{d_{\cS}+1, \dots, r\}$.
+Với phần tử thuộc $A$, entropy lớn nhất khi các $p_i$ phân bố đều tối đa: $-\sum_{A} p_i \log p_i \leq \log(d_{\cS})$.
+Với phần tử thuộc $B$ (tổng trọng số $\le \delta$), entropy lớn nhất khi $p_i = \delta / (r-d_{\cS})$. Do đó:
+\[
+-\sum_{i \in B} p_i \log p_i \leq \delta \log \frac{r-d_{\cS}}{\delta}.
+\]
+Kết hợp lại, $H \leq \log(d_{\cS}) + \delta \log \left( \frac{r-d_{\cS}}{\delta} \right)$. Lấy hàm $e^H$, ta có ngay điều phải chứng minh. Theo quy tắc L'Hôpital, khi $\delta \to 0^+$, giới hạn $x^x \to 1$, nên số hạng thứ hai triệt tiêu.
+\end{proof}
+
+\subsection{Bước 6: Tổng hợp bức tranh phân rã Rank}
+
+Áp dụng phân tích tại thời điểm $T$:
+\[
+W_T = W_T^\cS + W_T^{\cS^\perp}.
+\]
+Định nghĩa tỉ lệ năng lượng ngoài Subspace:
+\[
+\delta(T) = \frac{\|W_T^{\cS^\perp}\|_F^2}{\|W_T\|_F^2}.
+\]
+Từ Bổ đề~\ref{lem:energy_to_spectral} với $k = d_{\cS}$, tổng phần đuôi của năng lượng phổ trong giới hạn:
+\[
+\sum_{i=d_{\cS}+1}^{r} p_i = \frac{\sum_{i=d_{\cS}+1}^r \sigma_i^2(W_T)}{\|W_T\|_F^2} \le \frac{\|W_T^{\cS^\perp}\|_F^2}{\|W_T\|_F^2} = \delta(T).
+\]
+\textbf{Xét Trường hợp Gradient ổn định tuyệt đối ($\mu = 0$):} \\
+Tất cả nhiễu ngoài trực giao bị đóng băng $\|W_T^{\cS^\perp}\|_F^2 = \|W_0^{\cS^\perp}\|_F^2 = \text{hằng số}$. \\
+Năng lượng tổng tích lũy vô cực do thành phần Subspace bành trướng ở Bước 3: $\|W_T\|_F^2 = \|W_T^\cS\|_F^2 + \|W_0^{\cS^\perp}\|_F^2 = \Omega(T^2) \to \infty$. \\
+Suy ra $\delta(T) = \frac{\text{hằng số}}{\to \infty} \to 0$. \\
+Bằng Bổ đề~\ref{lem:entropy_conc}, $\erank(W_T)$ suy giảm hội tụ về tối đa cấu trúc hạng của $\cS$:
+\[
+\boxed{\lim_{T\to\infty} \erank(W_T) \leq d_{\cS}}.
+\]
+\textbf{Xét Trường hợp Xấp xỉ ($\mu > 0$):} \\
+Động lượng nhiễu tích lũy dần theo $\eta \mu \sum_t \|G_t\|_F$. Miễn là quá trình rò rỉ tăng trưởng tuyến tính $O(T)$ với hằng số rò rỉ $\mu$ đủ nhỏ, nó sẽ không thể đua lại với độ bành trướng bậc hai $\Omega(T^2)$ của năng lượng Coherence Subspace, tỉ số $\delta(T) \to 0$ vẫn sẽ được bảo toàn mạnh. \qed
+
+\end{document}

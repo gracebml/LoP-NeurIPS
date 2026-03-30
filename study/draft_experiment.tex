@@ -1,0 +1,634 @@
+\documentclass[11pt]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[T5]{fontenc}
+\usepackage[vietnamese]{babel}
+\usepackage{amsmath,amssymb,amsthm,mathtools}
+\usepackage{booktabs}
+\usepackage{geometry}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\usepackage{float}
+\geometry{margin=1in}
+
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\norm}[1]{\left\lVert #1 \right\rVert}
+\newcommand{\diag}{\mathrm{diag}}
+\newcommand{\Tr}{\mathrm{Tr}}
+\newcommand{\rank}{\mathrm{rank}}
+\newtheorem{lemma}{Bổ đề}[section]
+\newtheorem{theorem}[lemma]{Định lý}
+
+\title{Bản Nháp: Phương Pháp Bậc Hai Để Giảm Loss of Plasticity}
+\author{Working Draft}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\section{Thiết lập bài toán}
+Xét chuỗi nhiệm vụ theo thời gian (continual/non-stationary) $\{\mathcal{T}_s\}_{s=1}^S$.
+Tại bước $t$, tham số mô hình là $w_t \in \R^d$, dự đoán là $f(x;w_t)$, và hàm mất mát huấn luyện:
+\begin{equation}
+\mathcal{L}_t(w) = \E_{(x,y)\sim \mathcal{D}_t}\big[\ell(f(x;w),y)\big].
+\end{equation}
+
+Ta mô hình hóa loss of plasticity (LoP) bằng ba chỉ số:
+\begin{align}
+D_t &:= \frac{1}{m}\sum_{i=1}^{m} \mathbf{1}\{\bar a_{i,t} < \tau_a\}
+\quad\text{(tỷ lệ neuron ngủ)},\\
+r_t^{\mathrm{eff}} &:= \exp\!\left(-\sum_i p_{i,t}\log p_{i,t}\right),\quad p_{i,t}=\frac{\sigma_{i,t}^2}{\sum_j \sigma_{j,t}^2}
+\quad\text{(effective rank)},\\
+\chi_t &:= \E_x\norm{f_t(x)-f_{t-1}(x)}^2
+\quad\text{(độ churn biểu diễn)}.
+\end{align}
+$\bar a_{i,t}$ là activation-rate (EMA theo thời gian) của neuron $i$, $\tau_a$ là ngưỡng dormancy;
+$\sigma_{i,t}$ là singular value thứ $i$ của ma trận đặc trưng tại bước $t$, và $p_{i,t}$ là phân phối năng lượng phổ chuẩn hóa từ các singular value đó.
+
+\subsection{Bảng ký hiệu chính}
+\begin{center}
+\begin{tabular}{ll}
+\toprule
+Ký hiệu & Ý nghĩa \\
+\midrule
+$t$ & chỉ số bước tối ưu (iteration) \\
+$s$ & chỉ số task trong chuỗi continual learning \\
+$w_t \in \R^d$ & vector tham số mô hình tại bước $t$ \\
+$\mathcal{L}_t$ & loss tại phân phối dữ liệu hiện thời $\mathcal{D}_t$ \\
+$g_t=\nabla_w \mathcal{L}_t(w_t)$ & gradient theo tham số \\
+$m_t$ & EMA bậc một của gradient (momentum) \\
+$\eta_t$ & learning rate tại bước $t$ \\
+$\eta$ & chỉ số sai lệch tổng hợp (error budget) của preconditioner K-FAC xấp xỉ; khác $\eta_t$ \\
+$\lambda_t$ & hệ số decoupled weight decay tại bước $t$ \\
+$\lambda_k(A)$ & trị riêng thứ $k$ của ma trận $A=\E[aa^\top]$ trong phân tích quadratic \\
+$\tau_k$ & hằng số thời gian (time constant) của hướng riêng $k$: $e_k(t)\propto e^{-t/\tau_k}$ \\
+$\beta_1,\beta_2$ & hệ số EMA (bậc một và bậc hai/độ cong) \\
+$\rho,\rho_t$ & bán kính nhiễu SAM (perturbation radius) \\
+$\gamma$ & hệ số clipping trong Sophia \emph{hoặc} damping trong K-FAC (phân biệt theo ngữ cảnh) \\
+$\varepsilon,\epsilon_\rho$ & hằng số ổn định số (tránh chia cho 0) \\
+$p_t$ & hessian power schedule trong SASSHA \\
+$k$ & chu kỳ refresh estimator Hessian trong Sophia \\
+$\mathrm{bc2}_t$ & bias-correction cho EMA bậc hai \\
+$\tau_a$ & ngưỡng xác định neuron ngủ \\
+$\sigma_{i,t}$ & singular value thứ $i$ của biểu diễn tại bước $t$ \\
+$D_t$ & dormant ratio: tỷ lệ neuron hoạt hóa thấp \\
+$r_t^{\mathrm{eff}}$ & effective rank của biểu diễn \\
+$\chi_t$ & churn của biểu diễn giữa hai bước liên tiếp \\
+$r_k$ & hệ số co theo hướng riêng $k$ trong trường hợp damped K-FAC \\
+$\kappa_{\mathrm{damped}}$ & condition ratio sau damping trong phân tích quadratic \\
+$\mathcal{P}_t(\cdot)$ & toán tử preconditioning bậc hai tại bước $t$ \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Objective có ý thức plasticity:
+\begin{equation}
+\min_{\{w_t\}}\sum_t \mathcal{L}_t(w_t)
++ \lambda_D D_t
+- \lambda_R \log\big(r_t^{\mathrm{eff}}+\epsilon\big)
++ \lambda_\chi \chi_t.
+\label{eq:lop_objective}
+\end{equation}
+
+\section{Khung cập nhật bậc hai thống nhất}
+Dùng cập nhật tổng quát:
+\begin{equation}
+\begin{aligned}
+m_t &= \beta_1 m_{t-1} + (1-\beta_1) g_t,\qquad g_t = \nabla_w \mathcal{L}_t(w_t),\\
+w_{t+1} &= (1-\eta_t\lambda_t) w_t - \eta_t\,\mathcal{P}_t(m_t),
+\end{aligned}
+\label{eq:generic_update}
+\end{equation}
+trong đó $\mathcal{P}_t(\cdot)$ là toán tử tiền điều kiện theo độ cong (curvature-aware preconditioner), còn $\lambda_t$ là decoupled weight decay.
+$\eta_t\lambda_t$ thể hiện cường độ co norm do weight decay ở mỗi bước.
+
+\subsection{Điều kiện ổn định}
+Điều kiện đủ thực dụng để chuẩn tham số luôn bị chặn:
+
+\begin{equation}
+\norm{\mathcal{P}_t(m_t)} \le U,\qquad 0<\eta_t\lambda_t<1.
+\end{equation}
+Trong đó:
+\begin{itemize}
+\item $\norm{\cdot}$ là chuẩn Euclid ($\ell_2$) trên vector tham số/cập nhật.
+\item $U>0$ là cận trên đồng nhất (uniform upper bound) của độ lớn bước cập nhật đã precondition.
+\item Điều kiện $0<\eta_t\lambda_t<1$ đảm bảo thành phần weight decay tạo co norm hữu hiệu ở mỗi bước.
+\end{itemize}
+Khi đó
+\begin{equation}
+\norm{w_{t+1}} \le (1-\eta_t\lambda_t)\norm{w_t} + \eta_t U,
+\end{equation}
+suy ra $\limsup_{t\to\infty}\norm{w_t} \le U/\lambda_*$ với $\lambda_*:=\inf_t \lambda_t>0$.
+Ở đây $\lambda_*$ là cận dưới của lịch weight decay, còn $\limsup$ là giới hạn trên tiệm cận của dãy $\{\norm{w_t}\}$.
+
+\begin{lemma}[Chặn chuẩn tham số dưới cập nhật bậc hai bị chặn]
+Giả sử tồn tại $U>0$ sao cho $\norm{\mathcal{P}_t(m_t)}\le U$ với mọi $t$, và
+$0<\eta_t\lambda_t<1$ với $\lambda_*:=\inf_t \lambda_t>0$. Khi đó:
+\begin{equation}
+\norm{w_t}
+\le
+\left(\prod_{k=0}^{t-1}(1-\eta_k\lambda_k)\right)\norm{w_0}
+\;+\;
+\sum_{j=0}^{t-1}\eta_j U\prod_{k=j+1}^{t-1}(1-\eta_k\lambda_k),
+\end{equation}
+và đặc biệt $\limsup_{t\to\infty}\norm{w_t}\le U/\lambda_*$.
+\end{lemma}
+
+\begin{proof}
+Bất đẳng thức một bước cho ta truy hồi
+$x_{t+1}\le (1-\eta_t\lambda_t)x_t+\eta_tU$ với $x_t:=\norm{w_t}$.
+Khai triển truy hồi cho công thức tường minh ở trên. Vì $\lambda_t\ge\lambda_*>0$ nên thành phần quá độ suy giảm theo tích co,
+do đó giới hạn trên tiệm cận bị chặn bởi nghiệm cân bằng $U/\lambda_*$.
+\end{proof}
+
+Đây là miền làm việc hữu ích cho anti-LoP vì nổ norm tham số và sụp rank thường xảy ra cùng nhau.
+
+\section{Phương pháp 1: Sophia-G (độ cong chéo + clipped step)}
+Dạng giản lược (tương đương EMA bình phương gradient, dùng để giới thiệu ý tưởng;
+bản thuật toán chuẩn dùng estimator Hessian cập nhật mỗi $k$ bước --- xem Mục~\ref{sec:sophia_alg}):
+\begin{equation}
+h_t = \beta_2 h_{t-1} + (1-\beta_2)\, g_t\odot g_t.
+\end{equation}
+Bước cập nhật bậc hai theo từng tọa độ, có clipping:
+\begin{equation}
+\Delta_{t,i} = -\eta_t\,\mathrm{clip}\!\left(\frac{m_{t,i}}{\max\{\gamma\,h_{t,i},\,\varepsilon\}},\,1\right),
+\end{equation}
+với $\gamma>0$ là hệ số clipping theo độ cong (curvature clipping coefficient),
+tương ứng $\gamma=\rho B$ nếu muốn viết tách bán kính nhiễu $\rho$ và batch size $B$ như một số tài liệu;
+$h_{t,i}$ là ước lượng độ cong theo tọa độ thứ $i$, và $\varepsilon$ là hằng số chống chia cho 0.
+Hàm $\mathrm{clip}(z,1)=\max\{\min\{z,1\},-1\}$ áp dụng theo từng tọa độ.
+Cập nhật tham số:
+\begin{equation}
+w_{t+1} = (1-\eta_t\lambda_t)w_t + \Delta_t.
+\end{equation}
+
+\subsection{Thuật toán Sophia theo bản gốc}\label{sec:sophia_alg}
+Để khớp với bản thuật toán chuẩn, Sophia dùng một estimator đường chéo Hessian cập nhật theo chu kỳ $k$ bước
+(thay vì cập nhật mỗi bước). Hai estimator thường dùng là Hutchinson và GNB:
+
+\begin{algorithm}[t]
+\caption{Hutchinson$(w_t)$} 
+\begin{algorithmic}[1]
+\State \textbf{Input:} tham số $w_t$
+\State Tính mini-batch loss $\mathcal{L}_t(w_t)$
+\State Lấy $u \sim \mathcal{N}(0, I_d)$
+\State \textbf{return} $\hat h_t = u \odot \nabla_w\!\left\langle \nabla_w \mathcal{L}_t(w_t), u \right\rangle$
+\end{algorithmic}
+\end{algorithm}
+
+\begin{algorithm}[t]
+\caption{Gauss--Newton--Bartlett (GNB)$(w_t)$}
+\begin{algorithmic}[1]
+\State \textbf{Input:} tham số $w_t$
+\State Lấy mini-batch $\{x_b\}_{b=1}^B$
+\State Tính logits $z_b = f(w_t,x_b)$ cho mọi $b$
+\State Sample pseudo-label $\hat y_b \sim \mathrm{softmax}(z_b)$ cho mọi $b$
+\State Tính $\hat g_t=\nabla_w\!\left(\frac{1}{B}\sum_{b=1}^{B}\ell(z_b,\hat y_b)\right)$
+\State \textbf{return} $\hat h_t = B\cdot (\hat g_t \odot \hat g_t)$
+\end{algorithmic}
+\end{algorithm}
+
+\begin{algorithm}[H]
+\caption{Sophia$(w_1)$}
+\begin{algorithmic}[1]
+\State \textbf{Input:} $w_1$, lịch $\{\eta_t\}_{t=1}^{T}$, siêu tham số $\lambda,\beta_1,\beta_2,\epsilon,\gamma,k$, estimator $\in\{\text{Hutchinson},\text{GNB}\}$
+\State Khởi tạo $m_0=0,\;h_0=0,\;h_{1-k}=0$
+\For{$t=1,2,\dots,T$}
+    \State Tính mini-batch loss $\mathcal{L}_t(w_t)$ và gradient $g_t=\nabla_w\mathcal{L}_t(w_t)$
+    \State $m_t=\beta_1 m_{t-1}+(1-\beta_1)g_t$
+    \If{$t \bmod k = 1$}
+        \State Tính $\hat h_t = \mathrm{Estimator}(w_t)$
+        \State $h_t=\beta_2 h_{t-k} + (1-\beta_2)\hat h_t$
+    \Else
+        \State $h_t=h_{t-1}$
+    \EndIf
+    \State $\tilde w_t = w_t - \eta_t\lambda w_t$ \Comment{decoupled weight decay}
+    \State $w_{t+1}=\tilde w_t-\eta_t\,\mathrm{clip}\!\left(\frac{m_t}{\max\{\gamma h_t,\epsilon\}},1\right)$
+\EndFor
+\end{algorithmic}
+\end{algorithm}
+
+\noindent Trong đó $\max\{\gamma h_t,\epsilon\}$ và $\mathrm{clip}(\cdot,1)$ đều áp dụng theo từng tọa độ.
+
+\paragraph{Lý do hợp cho LoP.}
+Clipping trong không gian đã precondition giúp tránh một vài tọa độ bị under-estimate curvature lại chi phối toàn bộ update, từ đó ổn định hơn trên horizon dài khi phân phối dữ liệu thay đổi.
+
+\section{Phương pháp 2: SASSHA / SSASHA (SAM + preconditioning Hessian đường chéo)}
+SASSHA dùng bước hai pass theo SAM:
+\begin{align}
+e_t &= \rho_t\frac{g_t}{\norm{g_t}+\epsilon_\rho},\\
+\tilde g_t &= \nabla_w \mathcal{L}_t(w_t+e_t).
+\end{align}
+Ở đây $\rho_t$ là bán kính nhiễu SAM tại bước $t$, còn $\epsilon_\rho$ là hằng số ổn định số.
+Proxy độ cong (ước lượng đường chéo Hessian bằng Hutchinson) được theo dõi bằng EMA
+với \emph{lazy update} mỗi $k$ bước ($k{=}10$ trong paper gốc) và lấy \emph{trị tuyệt đối}
+để đảm bảo dương:
+\begin{equation}
+v_t =
+\begin{cases}
+\beta_2\,v_{t-1}+(1-\beta_2)\,\big|\widehat{\diag(H_t)}\big|, & \text{nếu } t\bmod k=0,\\
+v_{t-1}, & \text{ngược lại.}
+\end{cases}
+\end{equation}
+Ở đây $|\cdot|$ là trị tuyệt đối theo từng tọa độ, cần thiết vì đường chéo Hessian ước lượng có thể âm
+(xem SASSHA paper, Section~4.2).
+
+Với power schedule $p_t \in (0,1]$ (paper gốc đặt $p_t=\tfrac12$, tức lấy căn bậc hai), update là:
+\begin{equation}
+\begin{aligned}
+m_t &= \beta_1 m_{t-1} + (1-\beta_1)\tilde g_t,\\
+\mathrm{denom}_t &= v_t^{\,p_t}+\varepsilon,\\
+w_{t+1} &= (1-\eta_t\lambda_t)w_t - \eta_t\,\frac{m_t}{\mathrm{denom}_t}.
+\end{aligned}
+\end{equation}
+Trong đó $p_t$ là số mũ curvature schedule (hessian power); paper gốc SASSHA chọn $p_t=1/2$
+để cân bằng giữa ổn định số và mức preconditioning (xem Section~4.2 của SASSHA).
+$v_t$ là EMA của trị tuyệt đối đường chéo Hessian.
+
+\noindent\textbf{Ghi chú về bias-correction:}
+Một số cài đặt thêm hệ số bias-correction $\mathrm{bc2}_t=1-\beta_2^{\lfloor t/k\rfloor}$
+cho nhánh EMA bậc hai (tương tự Adam); tuy nhiên paper SASSHA gốc không ghi rõ
+bước này. Trong thực nghiệm của chúng tôi, bias-correction được bật để nhất quán với code tham chiếu.
+
+\paragraph{Lý do hợp cho LoP.}
+Trong thiết kế này, SAM được dùng chủ yếu để \emph{giảm overfitting} (làm phẳng vùng nghiệm), không phải cơ chế anti-LoP trực tiếp.
+Khi chạy dài hạn continual, SAM có thể làm nặng LoP nếu bật quá mạnh/quá thường xuyên; phần anti-LoP chính vẫn đến từ preconditioning, damping/decay, và giám sát $D_t,r_t^{\mathrm{eff}},\chi_t$.
+
+\begin{lemma}[Proof ngắn: SAM trong Method 2 là trade-off overfit--LoP]
+Xét xấp xỉ local quadratic tại bước $t$:
+\[
+\mathcal{L}_t(w_t+\delta)\approx \mathcal{L}_t(w_t)+g_t^\top\delta+\tfrac12\delta^\top H_t\delta,\qquad H_t\succeq 0.
+\]
+Giả sử trong cơ sở riêng của $H_t$ ta có $H_t=\diag(\lambda_{1,t},\dots,\lambda_{d,t})$ với
+$0<\lambda_{\min,t}\le \lambda_{i,t}\le \lambda_{\max,t}$, và nhánh EMA bậc hai của SASSHA bám sát đường chéo Hessian:
+$v_{i,t}\approx \lambda_{i,t}$. Đặt
+\[
+D_t:=\diag(\lambda_{1,t}^{p_t}+\varepsilon,\dots,\lambda_{d,t}^{p_t}+\varepsilon),\qquad p_t\in(0,1].
+\]
+Đặt $c_t:=\rho_t/(\norm{g_t}+\epsilon_\rho)$. Với nhiễu SAM nhỏ, khai triển một bước cho
+\[
+\tilde g_t
+=
+\nabla \mathcal{L}_t(w_t+e_t)
+=
+g_t+c_tH_tg_t+O(\rho_t^2),
+\]
+nên hướng có curvature lớn được khuếch đại gradient bởi nhân tử $(1+c_t\lambda_{i,t})$.
+Khi đó:
+\begin{enumerate}
+\item \textbf{(SAM giúp mục tiêu chống overfit)} Với $e_t=\rho_t g_t/(\norm{g_t}+\epsilon_\rho)$:
+\[
+\mathcal{L}_t(w_t+e_t)
+=
+\mathcal{L}_t(w_t)+\rho_t\norm{g_t}+O(\rho_t^2),
+\]
+đúng với diễn giải SAM như tối ưu robust loss cục bộ, nên giúp giảm overfitting do nghiệm quá sắc.
+
+\item \textbf{(SAM có thể làm tăng churn)} Đặt
+\[
+\Delta_t^{\mathrm{SAM}}:=-\eta_tD_t^{-1}\tilde g_t,\qquad
+\Delta_t^{\mathrm{base}}:=-\eta_tD_t^{-1}g_t.
+\]
+Bỏ qua $O(\rho_t^2)$:
+\[
+\norm{\Delta_t^{\mathrm{SAM}}}^2-\norm{\Delta_t^{\mathrm{base}}}^2
+=
+\eta_t^2\sum_{i=1}^{d}
+\frac{\big((1+c_t\lambda_{i,t})^2-1\big)\,g_{i,t}^2}{(\lambda_{i,t}^{p_t}+\varepsilon)^2}
+\ge 0.
+\]
+Nếu $f(\cdot;w)$ là $L_f$-Lipschitz theo $w$ thì
+\[
+\chi_{t+1}\le L_f^2\norm{\Delta_t}^2,
+\]
+nên cận trên churn dưới SAM lớn hơn hoặc bằng baseline.
+
+\item \textbf{(Mất cân bằng high-curvature tăng)} Với hai hướng $\lambda_{h,t}>\lambda_{l,t}$:
+\[
+\frac{\left|\Delta_{h,t}^{\mathrm{SAM}}\right|/\left|\Delta_{l,t}^{\mathrm{SAM}}\right|}
+{\left|\Delta_{h,t}^{\mathrm{base}}\right|/\left|\Delta_{l,t}^{\mathrm{base}}\right|}
+=
+\frac{1+c_t\lambda_{h,t}}{1+c_t\lambda_{l,t}}
+>1.
+\]
+SAM đẩy tương đối mạnh hơn theo hướng curvature cao; trong continual training dài, hiệu ứng này có thể làm nặng dormancy/rank-collapse.
+\end{enumerate}
+\textbf{Hàm ý vận hành:} SAM nên được xem là module chống overfit; mục tiêu anti-LoP cần kiểm soát bằng cơ chế khác.
+\end{lemma}
+
+\begin{proof}
+\textbf{(1)} Từ khai triển Taylor:
+\[
+\mathcal{L}_t(w_t+e_t)
+=
+\mathcal{L}_t(w_t)+g_t^\top e_t+O(\norm{e_t}^2)
+=
+\mathcal{L}_t(w_t)+\rho_t\norm{g_t}+O(\rho_t^2).
+\]
+
+\textbf{(2)} Trong cơ sở riêng của $H_t$:
+$\tilde g_{i,t}=(1+c_t\lambda_{i,t})g_{i,t}+O(\rho_t^2)$.
+Thay vào công thức cập nhật theo tọa độ của $\Delta_t^{\mathrm{SAM}}$ và $\Delta_t^{\mathrm{base}}$
+thu được hiệu norm-bình phương như phát biểu, với mọi hạng đều không âm.
+
+\textbf{(3)} Ta có
+\[
+\frac{|\Delta_{i,t}^{\mathrm{SAM}}|}{|\Delta_{i,t}^{\mathrm{base}}|}
+=
+1+c_t\lambda_{i,t}
+\]
+\textbf{(do cùng mẫu số preconditioner)}.
+Với $\lambda_{h,t}>\lambda_{l,t}$ suy ra
+\[
+\frac{1+c_t\lambda_{h,t}}{1+c_t\lambda_{l,t}}>1,
+\]
+cho kết luận mất cân bằng tăng ở hướng curvature lớn.
+\end{proof}
+
+\paragraph{Khuyến nghị thực dụng cho Method 2 trong LoP setting.}
+Chỉ bật SAM khi tín hiệu overfitting tăng (train--val gap hoặc sharpness spike), và giảm/tắt SAM khi
+$D_t$ tăng nhanh hoặc $r_t^{\mathrm{eff}}$ giảm dưới ngưỡng.
+
+\paragraph{Bằng chứng từ literature (để hiệu chỉnh kết luận về SAM).}
+Kết luận ``SAM có thể làm nặng LoP trong continual/non-stationary setting'' được hậu thuẫn bởi ba kết quả gần đây:
+\begin{itemize}
+\item \textbf{C-Flat (NeurIPS 2024):} chỉ ra rằng tối ưu theo \emph{zeroth-order sharpness} (như cơ chế SAM chuẩn) có thể dẫn tới nghiệm nhạy (sensitive minima), và \emph{không đảm bảo} đi tới nghiệm phẳng hơn trong bài toán continual learning.
+\item \textbf{C-Flat++ (arXiv 2025, \textit{cần bổ sung arXiv ID chính xác}):} báo cáo rằng ép phẳng loss quá mức có thể \emph{cản trở học} trong môi trường phân phối thích nghi liên tục (adaptive-distribution continual learning), nên cơ chế ``flattening-only'' không đủ cho plasticity dài hạn.
+\item \textbf{A Universal Class of SAM Algorithms (ICML 2024):} chứng minh với bán kính nhiễu cố định, giảm robust objective của SAM \emph{không đồng nghĩa} giảm các thước đo sharpness theo Hessian; vì vậy dùng SAM như proxy duy nhất cho anti-LoP là không an toàn.
+\end{itemize}
+Hiện chưa có định lý tổng quát kiểu ``SAM luôn làm trầm trọng LoP'' cho mọi kiến trúc/task; tuy nhiên ba kết quả trên cung cấp bằng chứng nhất quán rằng \emph{SAM thuần flattening} có thể làm xấu trade-off plasticity trong bối cảnh continual/non-stationary.
+Do đó bản draft này đặt SAM vào vai trò chính là \emph{anti-overfitting module}, còn anti-LoP cần cơ chế bổ sung (curvature control + trigger theo $D_t,r_t^{\mathrm{eff}},\chi_t$).
+
+\section{Phương pháp 3: Natural Gradient Descent với K-FAC}
+Với tham số theo từng lớp $W_l$, natural gradient dùng nghịch đảo Fisher:
+\begin{equation}
+\mathrm{vec}(\Delta W_l) = -\eta_t \, F_l^{-1}\,\mathrm{vec}(\nabla_{W_l}\mathcal{L}_t).
+\end{equation}
+K-FAC xấp xỉ block Fisher theo Kronecker:
+\begin{equation}
+F_l \approx A_{l-1} \otimes G_l,
+\end{equation}
+trong đó
+\begin{equation}
+A_{l-1}=\E[a_{l-1}a_{l-1}^\top],\qquad G_l=\E[g_l g_l^\top].
+\end{equation}
+Ở đây $a_{l-1}$ là activation đầu vào của lớp $l$, $g_l=\nabla_{z_l}\mathcal{L}_t$ là gradient tại pre-activation $z_l$ của lớp $l$.
+Với damping $\gamma>0$, cập nhật thực tế:
+\begin{equation}
+\Delta W_l = -\eta_t\,(A_{l-1}+\gamma I)^{-1}\,\nabla_{W_l}\mathcal{L}_t\,(G_l+\gamma I)^{-1}.
+\end{equation}
+$\gamma$ là hệ số damping để đảm bảo ổn định nghịch đảo và kiểm soát mức preconditioning.
+
+\paragraph{Lý do hợp cho LoP.}
+K-FAC cho tiền điều kiện gần natural gradient hơn các dạng diagonal, giúp cân bằng tốc độ học theo các hướng phổ khác nhau, nhờ đó giữ khả năng thích nghi khi gặp task mới và giảm xu hướng “đóng băng” biểu diễn.
+
+\begin{lemma}[Proof bổ sung: NGD với xấp xỉ K-FAC]
+Xét loss bậc hai
+\[
+\mathcal{L}(w)=\frac12\,\E[(w^\top a-y)^2],\qquad
+A:=\E[aa^\top]\succ0,\qquad b:=\E[ay].
+\]
+Khi đó:
+\begin{enumerate}
+\item \textbf{(Exact quadratic)} Với gradient flow, SGD có hằng số thời gian theo từng hướng riêng là
+$\tau_k^{\mathrm{SGD}}=1/\lambda_k(A)$ nên condition ratio là $\kappa(A)$.
+Natural gradient (dùng preconditioner $A^{-1}$) cho
+$\tau_k^{\mathrm{NGD}}=1$ với mọi $k$, nên condition ratio bằng $1$.
+Ở đây ``hằng số thời gian'' $\tau_k$ được hiểu theo dạng suy giảm mũ của sai số trên hướng riêng $k$:
+\[
+e_k(t)=e_k(0)\exp\!\left(-\frac{t}{\tau_k}\right).
+\]
+Nghĩa là sau thời gian $t=\tau_k$, sai số còn $e^{-1}\approx 36.8\%$ so với ban đầu; do đó
+$\tau_k$ càng nhỏ thì hội tụ càng nhanh.
+
+\item \textbf{(Damped K-FAC)} Với damping $\gamma>0$, tốc độ theo hướng riêng $k$ là
+\[
+r_k=\frac{\lambda_k}{\lambda_k+\gamma},
+\quad
+\kappa_{\mathrm{damped}}
+=
+\frac{\lambda_{\max}(A)\,(\lambda_{\min}(A)+\gamma)}
+{\lambda_{\min}(A)\,(\lambda_{\max}(A)+\gamma)}.
+\]
+Trong đó:
+\begin{itemize}
+\item $\lambda_k=\lambda_k(A)$ là trị riêng thứ $k$ của $A=\E[aa^\top]$ (lưu ý \textbf{khác} với $\lambda_t$ là weight decay theo thời gian).
+\item $r_k$ là mức co của động lực học theo hướng riêng $k$ sau khi thêm damping.
+\item $\kappa_{\mathrm{damped}}$ là tỉ số điều kiện (condition ratio) của hệ đã damping, đo mức chênh tốc độ hội tụ giữa hướng nhanh nhất và chậm nhất.
+\end{itemize}
+Suy ra $\kappa_{\mathrm{damped}}\to 1$ khi $\gamma\ll\lambda_{\min}(A)$ và tiến về $\kappa(A)$ khi $\gamma\gg\lambda_{\max}(A)$.
+
+\item \textbf{(Xấp xỉ K-FAC theo EMA + Kronecker)} Gọi $\hat A_t=A_t+E_t^A$, $\hat G_t=G_t+E_t^G$ là ước lượng factor.
+Với EMA decay $\alpha$, batch size $B$, drift mỗi bước $\Delta_A,\Delta_G$ và nhiễu $\sigma_A,\sigma_G$, trạng thái dừng cho sai số tracking là
+\[
+e_\infty^A=\frac{\Delta_A}{\alpha}+\frac{\sigma_A}{\sqrt B},
+\qquad
+e_\infty^G=\frac{\Delta_G}{\alpha}+\frac{\sigma_G}{\sqrt B}.
+\]
+Đặt $\epsilon_K$ là sai số Kronecker.
+Nếu
+\[
+\eta
+:=
+\epsilon_K
++\frac{e_\infty^A}{\gamma}
++\frac{e_\infty^G}{\gamma}
++\frac{e_\infty^Ae_\infty^G}{\gamma^2}
+<1,
+\]
+trong đó $\eta$ là \emph{error budget} tổng hợp của preconditioner xấp xỉ (không phải learning rate $\eta_t$):
+nó cộng lỗi Kronecker ($\epsilon_K$), lỗi tracking của hai factor ($e_\infty^A,e_\infty^G$) và cross-term.
+thì condition ratio hiệu dụng của hệ đã precondition thỏa
+\[
+\kappa_{\mathrm{eff}}\le \frac{1+\eta}{1-\eta}.
+\]
+Vì vậy $\eta$ càng nhỏ thì preconditioner càng gần lý tưởng và cận trên của $\kappa_{\mathrm{eff}}$ càng chặt.
+\end{enumerate}
+Do đó, khi $\eta$ nhỏ (ước lượng factor đủ tốt và damping hợp lý), K-FAC vẫn giữ gần tính ``equalization'' của NGD exact, là cơ chế cốt lõi giúp giảm LoP.
+\end{lemma}
+
+\begin{proof}
+\textbf{(1)} Ta có $\nabla_w\mathcal{L}=Aw-b$.
+SGD flow: $\dot w=-(Aw-b)$.
+Trong cơ sở riêng $A=U\Lambda U^\top$, với $\tilde w=U^\top w$:
+\[
+\dot{\tilde w}_k
+=
+-\lambda_k\!\left(\tilde w_k-\frac{\tilde b_k}{\lambda_k}\right),
+\]
+nên hằng số thời gian là $1/\lambda_k$.
+NGD flow: $\dot w=-A^{-1}(Aw-b)=-(w-A^{-1}b)$, suy ra
+\[
+\dot{\tilde w}_k
+=
+-\left(\tilde w_k-\frac{\tilde b_k}{\lambda_k}\right),
+\]
+tất cả hướng đều có hằng số thời gian bằng $1$.
+
+\textbf{(2)} Với damping, thay $A^{-1}$ bởi $(A+\gamma I)^{-1}$.
+Theo từng trị riêng, hệ số co là $r_k=\lambda_k/(\lambda_k+\gamma)$.
+Lấy tỉ số hướng nhanh nhất/chậm nhất cho công thức $\kappa_{\mathrm{damped}}$ ở trên.
+
+\textbf{(3)} Dùng đẳng thức
+\[
+(\hat A_t+\gamma I)^{-1}(A_t+\gamma I)
+=
+I-\delta_A,\quad
+\delta_A:=(A_t+E_t^A+\gamma I)^{-1}E_t^A,
+\]
+và tương tự cho $G$.
+Từ truy hồi EMA
+\[
+E_t^A=(1-\alpha)E_{t-1}^A+(1-\alpha)(A_{t-1}-A_t)+\alpha(a_ta_t^\top-A_t),
+\]
+lấy kỳ vọng chuẩn cho ta $e_\infty^A=\Delta_A/\alpha+\sigma_A/\sqrt B$ (tương tự cho $e_\infty^G$).
+Khi đó nhiễu preconditioning có dạng
+\[
+(I-\delta_A)\otimes(I-\delta_G)-I
+=
+-\delta_A\otimes I-I\otimes\delta_G+\delta_A\otimes\delta_G.
+\]
+Lấy chuẩn toán tử:
+\[
+\norm{\mathcal E}
+\le
+\norm{\delta_A}+\norm{\delta_G}+\norm{\delta_A}\norm{\delta_G}
+\le
+\frac{e_\infty^A}{\gamma}+\frac{e_\infty^G}{\gamma}
++\frac{e_\infty^Ae_\infty^G}{\gamma^2}.
+\]
+Cộng thêm sai số factorization $\epsilon_K$ cho ra $\eta$.
+Với $\eta<1$, bất đẳng thức nhiễu chuẩn cho toán tử gần đồng nhất cho
+$\kappa_{\mathrm{eff}}\le(1+\eta)/(1-\eta)$.
+\end{proof}
+
+\subsection{Liên hệ trực tiếp với Theorem 4.4 và 4.5 trong \texttt{icml\_paper.tex}}
+\begin{theorem}[Theorem 4.4 rút gọn: Cloned Unit --- symmetry breaking]
+Xét hai neuron $i,j$ gần-clone:
+\[
+w_j = w_i - \delta\norm{w_i}\hat e,\qquad \delta>0\ \text{nhỏ},\qquad v_i=v_j.
+\]
+Đặt $G=\E[gg^\top]$ là covariance của gradient theo neuron, và
+\[
+\sigma_{\min}^{(ij)} := G_{ii}+G_{jj}-2G_{ij}.
+\]
+Nếu gradient đầu ra bị chặn và mật độ dữ liệu quanh hyperplane bị chặn, thì:
+\[
+v_i^2 B_\ell^{\mathrm{strip}} P_{\mathrm{strip}}
+\le
+\sigma_{\min}^{(ij)}
+\le
+2v_i^2 B_y^2 P_{\mathrm{strip}},
+\]
+trong đó $P_{\mathrm{strip}}$ là xác suất vùng bất đồng kích hoạt giữa hai neuron. Hơn nữa:
+\[
+\frac{\norm{\Delta w_i^{\mathrm{NGD}}-\Delta w_j^{\mathrm{NGD}}}}
+{\norm{\Delta w_i^{\mathrm{SGD}}-\Delta w_j^{\mathrm{SGD}}}}
+\ge
+\frac{1}{\norm{A+\gamma I}_{\mathrm{op}}(\gamma+\sigma_{\min}^{(ij)})}.
+\]
+Đặc biệt khi $\delta$ nhỏ nên $\sigma_{\min}^{(ij)}\ll\gamma$, hệ số khuếch đại xấp xỉ
+$1/\!\big(\gamma(\lambda_{\max}(A)+\gamma)\big)$.
+\end{theorem}
+
+\begin{theorem}[Theorem 4.5 rút gọn: Per-layer Lyapunov stability]
+Xét cập nhật K-FAC theo lớp:
+\[
+W_{l,t+1}=(1-\eta\lambda_l)W_{l,t}-\eta\tilde G_{l,t},
+\]
+và đặt $V_l=\frac12\norm{W_l}_F^2$. Giả sử tồn tại $m_{1,l},m_{2,l}\ge0$ sao cho
+\[
+\norm{\tilde G_{l,t}}_F \le m_{1,l}+m_{2,l}\norm{W_l}_F,\qquad m_{2,l}<\lambda_l.
+\]
+Khi đó tồn tại hằng số $C_l<\infty$ sao cho
+\[
+V_l(t+1)\le \rho_l V_l(t)+C_l,\qquad
+\rho_l=(1-\eta(\lambda_l-m_{2,l}))^2<1,
+\]
+và chuẩn trọng số theo lớp bị chặn bởi
+\[
+\norm{W_{l,t}}_F \le R_l^*=\frac{m_{1,l}}{\lambda_l-m_{2,l}}+\frac{\eta m_{1,l}}{2}.
+\]
+\end{theorem}
+
+\begin{theorem}[Theorem 4.6 rút gọn: Global Lyapunov stability]
+Xét cập nhật NGD/K-FAC có weight decay:
+\[
+\theta_{t+1}
+=
+(1-\eta\lambda)\theta_t
+-\eta(F_t+\gamma I)^{-1}\nabla_\theta\mathcal{L}(\theta_t).
+\]
+Giả sử tồn tại $M_1,M_2\ge0$ sao cho
+\[
+\norm{(F_t+\gamma I)^{-1}\nabla_\theta\mathcal{L}(\theta_t)}_2
+\le
+M_1+M_2\norm{\theta_t}_2,
+\]
+và thêm điều kiện $M_2<\lambda$, $\eta(\lambda-M_2)<2$.
+Đặt $V(\theta)=\frac12\norm{\theta}_2^2$. Khi đó quỹ đạo vào một quả cầu bị chặn:
+\[
+\norm{\theta_t}_2 \le R^*
+\quad\text{với}\quad
+R^*=\frac{M_1}{\lambda-M_2}+\frac{\eta M_1}{2},
+\]
+và hệ số co Lyapunov toàn cục là
+\[
+\rho=(1-\eta(\lambda-M_2))^2<1.
+\]
+\end{theorem}
+
+\paragraph{Ý nghĩa thực dụng.}
+Theorem 4.4 giải thích cơ chế phá clone (tách các neuron gần trùng nhau) của NGD/K-FAC.
+Theorem 4.5 cho điều kiện đủ để norm từng lớp không nổ (per-layer).
+Theorem 4.6 cho cận bị chặn toàn cục của norm tham số (global), là bản đối chiếu trực tiếp với phân tích Lyapunov chuẩn.
+
+\section{Hướng tiếp cận bậc hai có ý thức plasticity (thống nhất)}
+Chính sách hybrid thực dụng: chọn preconditioner theo độ tin cậy ước lượng độ cong:
+\begin{equation}
+\mathcal{P}_t =
+\begin{cases}
+\mathcal{P}^{\mathrm{K\text{-}FAC}}_t, & \text{nếu block-Fisher ổn định và đủ ngân sách tính toán},\\
+\mathcal{P}^{\mathrm{Shampoo}}_t, & \text{nếu ước lượng độ cong theo block ổn định},\\
+\mathcal{P}^{\mathrm{SASSHA}}_t, & \text{nếu phát hiện sharpness spike và }(D_t,r_t^{\mathrm{eff}},\chi_t)\text{ còn trong ngưỡng an toàn},\\
+\mathcal{P}^{\mathrm{Sophia}}_t, & \text{nếu ngân sách bộ nhớ/tính toán hạn chế}.
+\end{cases}
+\label{eq:switch_rule}
+\end{equation}
+
+Có thể điều chỉnh các hệ số regularization trong Eq.~\eqref{eq:lop_objective}:
+\begin{align}
+\lambda_D &\uparrow \text{ khi } D_t \text{ tăng},\\
+\lambda_R &\uparrow \text{ khi } r_t^{\mathrm{eff}} \text{ giảm dưới ngưỡng},\\
+\lambda_\chi &\uparrow \text{ khi churn } \chi_t \text{ mất ổn định}.
+\end{align}
+
+\begin{algorithm}[t]
+\caption{Huấn luyện bậc hai có ý thức plasticity (bản nháp)}
+\begin{algorithmic}[1]
+\State Khởi tạo $w_0$, trạng thái momentum, trạng thái độ cong
+\For{$t=1,2,\dots,T$}
+    \State Lấy mini-batch từ stream/task hiện tại
+    \State Tính gradient $g_t$
+    \If{method = SASSHA và LoP metrics chưa xấu}
+        \State Tạo nhiễu SAM $e_t$, tính gradient nhiễu $\tilde g_t$
+        \State Cập nhật proxy Hessian đường chéo và đặt $\mathcal{P}_t = \mathcal{P}^{\mathrm{SASSHA}}_t$
+    \ElsIf{method = SASSHA và LoP metrics xấu}
+        \State Tắt/giảm SAM (giảm $\rho_t$ hoặc cadence), fallback sang preconditioner không-SAM
+    \ElsIf{method = K-FAC}
+        \State Cập nhật EMA các factor $A_{l-1},G_l$ theo từng lớp
+        \State Tính bước NGD damped và đặt $\mathcal{P}_t = \mathcal{P}^{\mathrm{K\text{-}FAC}}_t$
+    \ElsIf{method = Shampoo}
+        \State Cập nhật thống kê theo mode và đặt $\mathcal{P}_t = \mathcal{P}^{\mathrm{Shampoo}}_t$
+    \Else
+        \State Cập nhật EMA độ cong đường chéo và đặt $\mathcal{P}_t = \mathcal{P}^{\mathrm{Sophia}}_t$
+    \EndIf
+    \State Cập nhật $m_t$ và áp dụng Eq.~\eqref{eq:generic_update}
+    \State Tính $D_t, r_t^{\mathrm{eff}}, \chi_t$ và điều chỉnh $\lambda_D,\lambda_R,\lambda_\chi$
+\EndFor
+\end{algorithmic}
+\end{algorithm}
+
+
+
+\end{document}

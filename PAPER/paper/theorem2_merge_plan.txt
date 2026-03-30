@@ -1,0 +1,27 @@
+Proposed merge plan for PAPER/paper/paper_merged.tex
+
+1. After Theorem~\ref{thm:rank}, insert the remark from theorem2_maintext_draft.tex explaining:
+- when Assumptions \ref{ass:align}--\ref{ass:order} are approximately satisfied,
+- how SDP helps Hessian-based optimizers (AdaHessian, SophiaH, SASSHA),
+- how CWN helps Fisher-based K-FAC/NGD in non-BN MLPs,
+- and that the detailed proof is in Appendix~\ref{app:proof_rank}.
+
+2. Near the start of Section~\ref{sec:experiments}, insert the paragraph "Experiments as assumption diagnostics" from theorem2_maintext_draft.tex.
+
+3. In Appendix~\ref{app:proofs}, replace the current subsection
+   "Proof of Theorem~\ref{thm:rank_preservation}"
+   with:
+   \input{theorem2}
+   where theorem2.tex is now an English appendix-ready proof snippet with label \ref{app:proof_rank}.
+
+4. Update stale cross-references from thm:rank_preservation to thm:rank at these locations:
+- Proposition on BatchNorm improving second-order rank preservation
+- SDP corollary discussion
+- Method summary table
+- CIFAR-100 analysis paragraph
+- Analysis section: Channel 1
+- Appendix subsection heading (to be replaced anyway by \input{theorem2})
+
+5. Optional cleanup after merge:
+- Re-read the surrounding prose to ensure consistent naming: "Effective rank preservation" / Theorem~\ref{thm:rank}.
+- Compile and check for any remaining stale labels.

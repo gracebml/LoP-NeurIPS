@@ -1,0 +1,156 @@
+\subsection{Detailed proof of Theorem~\ref{thm:rank}}
+\label{app:proof_rank}
+
+We prove the one-step effective-rank preservation claim under Assumptions~\ref{ass:align}--\ref{ass:order}. The proof has two ingredients: a coordinate-wise representation of the preconditioned singular values under spectral alignment, and a majorization argument showing that the induced spectral-energy distribution becomes more uniform.
+
+\paragraph{Step 1: singular values of the preconditioned update.}
+Under Assumption~\ref{ass:align}, write the compact SVD of the gradient as
+\[
+G = U \diag(s_1,\ldots,s_r) V^\top,
+\qquad
+s_1 \ge \cdots \ge s_r > 0,
+\]
+and let the preconditioner act on the same left singular basis:
+\[
+PU = U \diag(\lambda_1,\ldots,\lambda_r),
+\qquad
+\lambda_1 \ge \cdots \ge \lambda_r > 0.
+\]
+Then
+\[
+P^{-1}U = U \diag(\lambda_1^{-1},\ldots,\lambda_r^{-1}),
+\]
+so
+\[
+P^{-1}G
+= U \diag(\lambda_1^{-1},\ldots,\lambda_r^{-1}) \diag(s_1,\ldots,s_r) V^\top
+= U \diag\!\left(\frac{s_1}{\lambda_1},\ldots,\frac{s_r}{\lambda_r}\right) V^\top.
+\]
+Hence the singular values of $P^{-1}G$ are
+\[
+t_i = \frac{s_i}{\lambda_i}, \qquad i=1,\ldots,r.
+\]
+Assumption~\ref{ass:order} guarantees that the rescaled sequence remains sorted in non-increasing order.
+
+\paragraph{Step 2: normalized spectral energies before and after preconditioning.}
+Define the spectral-energy distributions
+\[
+p_i = \frac{s_i^2}{\sum_{j=1}^r s_j^2},
+\qquad
+\widetilde p_i = \frac{t_i^2}{\sum_{j=1}^r t_j^2}.
+\]
+Substituting $t_i = s_i/\lambda_i$ gives
+\[
+\widetilde p_i
+= \frac{s_i^2/\lambda_i^2}{\sum_{j=1}^r s_j^2/\lambda_j^2}
+= \frac{p_i\,\lambda_i^{-2}}{\sum_{j=1}^r p_j\,\lambda_j^{-2}}.
+\]
+If we set
+\[
+b_i = \lambda_i^{-2},
+\]
+then $b_1 \le \cdots \le b_r$ because $\lambda_1 \ge \cdots \ge \lambda_r > 0$. Therefore $\widetilde p$ is obtained from $p$ by multiplicative reweighting with an increasing sequence of weights.
+
+\begin{lemma}[Monotone reweighting yields majorization]
+\label{lem:reweight_majorization_rank}
+Let
+\[
+p_1 \ge p_2 \ge \cdots \ge p_r \ge 0,
+\qquad
+\sum_{i=1}^r p_i = 1,
+\]
+and let
+\[
+b_1 \le b_2 \le \cdots \le b_r,
+\qquad
+b_i > 0.
+\]
+Define
+\[
+q_i = \frac{p_i b_i}{\sum_{j=1}^r p_j b_j}.
+\]
+If $q_1 \ge q_2 \ge \cdots \ge q_r$, then
+\[
+q \prec p.
+\]
+\end{lemma}
+
+\begin{proof}
+It is enough to show that for every $k=1,\ldots,r-1$,
+\[
+\sum_{i=1}^k q_i \le \sum_{i=1}^k p_i.
+\]
+Since $q$ is already assumed to be sorted, no additional rearrangement is needed. Write
+\[
+S_k = \sum_{i=1}^k p_i,
+\qquad
+T_k = \sum_{i=k+1}^r p_i,
+\qquad
+Z = \sum_{j=1}^r p_j b_j.
+\]
+Then
+\[
+\sum_{i=1}^k q_i = \frac{\sum_{i=1}^k p_i b_i}{Z}.
+\]
+The desired inequality is equivalent to
+\[
+\frac{\sum_{i=1}^k p_i b_i}{Z} \le S_k,
+\]
+which, after substituting $Z = \sum_{i=1}^k p_i b_i + \sum_{j=k+1}^r p_j b_j$, is equivalent to
+\[
+T_k \sum_{i=1}^k p_i b_i \le S_k \sum_{j=k+1}^r p_j b_j.
+\tag{$*$}
+\]
+When $S_k T_k = 0$, the claim is immediate. Otherwise divide both sides of $(*)$ by $S_k T_k$ to obtain
+\[
+\frac{\sum_{i=1}^k p_i b_i}{S_k}
+\le
+\frac{\sum_{j=k+1}^r p_j b_j}{T_k}.
+\]
+The left-hand side is a weighted average of $b_1,\ldots,b_k$, hence at most $b_k$. The right-hand side is a weighted average of $b_{k+1},\ldots,b_r$, hence at least $b_{k+1} \ge b_k$. Therefore $(*)$ holds, so
+\[
+\sum_{i=1}^k q_i \le \sum_{i=1}^k p_i
+\qquad \text{for all } k=1,\ldots,r-1.
+\]
+Since $\sum_i q_i = \sum_i p_i = 1$, this proves $q \prec p$.
+\end{proof}
+
+\paragraph{Step 3: majorization of the reweighted spectrum.}
+Applying Lemma~\ref{lem:reweight_majorization_rank} with $q = \widetilde p$ and $b_i = \lambda_i^{-2}$ gives
+\[
+\widetilde p \prec p.
+\]
+This is the precise sense in which preconditioning flattens the spectral-energy distribution under Assumptions~\ref{ass:align}--\ref{ass:order}.
+
+\paragraph{Step 4: entropy is Schur-concave.}
+Consider the concave function
+\[
+\phi(t) = -t \log t, \qquad t \in (0,1].
+\]
+By the Hardy--Littlewood--Pólya / Karamata principle, majorization implies
+\[
+\sum_{i=1}^r \phi(\widetilde p_i) \ge \sum_{i=1}^r \phi(p_i).
+\]
+Equivalently,
+\[
+H(\widetilde p) = -\sum_{i=1}^r \widetilde p_i \log \widetilde p_i
+\ge
+-\sum_{i=1}^r p_i \log p_i = H(p).
+\]
+Thus the Shannon entropy of the normalized spectral energy cannot decrease.
+
+\paragraph{Step 5: return to effective rank.}
+By definition,
+\[
+\erank(P^{-1}G) = \exp(H(\widetilde p)),
+\qquad
+\erank(G) = \exp(H(p)).
+\]
+Because the exponential function is increasing, $H(\widetilde p) \ge H(p)$ implies
+\[
+\erank(P^{-1}G) \ge \erank(G).
+\]
+This proves Theorem~\ref{thm:rank}.
+
+\paragraph{Interpretation.}
+The role of Assumption~\ref{ass:align} is geometric: it turns the matrix product $P^{-1}G$ into a coordinate-wise rescaling in the singular basis of $G$. The role of Assumption~\ref{ass:order} is order-theoretic: it ensures that this rescaling can be analyzed directly via prefix sums without an additional permutation argument. Under these two assumptions, preconditioning suppresses high-curvature dominant directions more strongly than low-curvature directions, which yields a more uniform spectral-energy distribution and therefore a larger effective rank.

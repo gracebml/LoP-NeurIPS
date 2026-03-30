@@ -1,0 +1,666 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[vietnamese]{babel}
+\usepackage{amsmath,amssymb,amsthm,mathtools}
+\usepackage[margin=2.5cm]{geometry}
+
+\newtheorem{theorem}{Định lý}
+\newtheorem{assumption}{Giả thiết}
+\newtheorem{definition}{Định nghĩa}
+\newtheorem{proposition}{Mệnh đề}
+\newtheorem{remark}{Nhận xét}
+
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\norm}[1]{\left\lVert #1 \right\rVert}
+\newcommand{\abs}[1]{\left\lvert #1 \right\rvert}
+\newcommand{\Ind}{\mathbf 1}
+\DeclareMathOperator{\op}{op}
+
+\title{Chứng minh chặt hơn cho cơ chế thoát khỏi \emph{cloned units}}
+\author{}
+\date{}
+
+\begin{document}
+\maketitle
+
+\section{Mục tiêu}
+
+Tài liệu này trích riêng phần chứng minh cho trường hợp \emph{cloned units}, nhưng
+được viết lại theo hướng chặt hơn về mặt toán học. Hai điểm được sửa so với bản
+trình bày ban đầu là:
+\begin{itemize}
+    \item ta \emph{không} đồng nhất ngay đại lượng
+    \[
+    G_{ii}+G_{jj}-2G_{ij}
+    \]
+    với một eigenvalue của toàn bộ ma trận $G$; thay vào đó, ta xem nó là một
+    \emph{proxy độ cong theo hướng phản đối xứng} của cặp neuron $(i,j)$;
+    \item ta \emph{không} suy ra xác suất của ``strip'' chỉ từ một giả thiết mật
+    độ gần siêu phẳng. Thay vào đó, ta đặt trực tiếp một giả thiết
+    anti-concentration đúng đúng đại lượng mà proof cần.
+\end{itemize}
+
+Ngoài ra, ở phần khuếch đại của K-FAC, ta sẽ không phát biểu giả thiết cuối theo
+kiểu ``$u_-$ là eigenvector đúng hẳn của $G$''. Thay vào đó, ta viết nó theo
+ngôn ngữ \emph{cloning manifold / equitable partition}: tồn tại một ma trận tham
+chiếu $G^{\mathrm{cl}}$ có đối xứng clone đúng hẳn, còn $G$ hiện tại chỉ là một
+perturbation nhỏ của ma trận đó.
+
+\paragraph{Liên hệ với các kết quả đã biết.}
+Trong lý thuyết học máy dạng singular learning, các mạng có unit trùng lặp tạo ra
+singularity của Fisher/information matrix. Đây là hiện tượng đã được nghiên cứu
+từ khá sớm, chẳng hạn trong các công trình của Fukumizu và của Amari cùng cộng
+sự. Bản chứng minh dưới đây không dùng trực tiếp các định lý hình học đó, nhưng
+hoàn toàn phù hợp với trực giác của chúng: khi hai neuron gần trùng nhau, tồn tại
+một hướng phản đối xứng có độ cong rất nhỏ, và natural gradient có xu hướng khuếch
+đại hướng này.
+
+\section{Thiết lập}
+
+Xét mạng ReLU một tầng ẩn:
+\[
+f(x)=\sum_{k=1}^m v_k \max(0,w_k^\top x),
+\]
+trong đó $w_k \in \R^d$ là vector trọng số của neuron $k$ và $v_k \in \R$ là
+trọng số đi ra đầu ra.
+
+Đặt
+\[
+g_k = \frac{\partial \mathcal L}{\partial f}\, v_k \,\Ind(w_k^\top x > 0),
+\qquad
+g=(g_1,\ldots,g_m)^\top,
+\]
+và ma trận thống kê đầu ra
+\[
+G = \E[gg^\top].
+\]
+
+Ở phía đầu vào, ta chỉ cần ma trận
+\[
+A = \E[xx^\top] \succeq 0.
+\]
+Lưu ý rằng trong phần cloned units, điều ta thực sự dùng chỉ là
+\[
+\norm{A+\gamma I}_{\op} < \infty,
+\]
+chứ không cần thiết phải giả sử $A \succ 0$.
+
+\section{Các giả thiết}
+
+\begin{assumption}[Đạo hàm loss bị chặn]
+\label{ass:loss_bounded}
+Tồn tại hằng số $B_y > 0$ sao cho
+\[
+\abs{\frac{\partial \mathcal L}{\partial f}} \le B_y
+\quad \text{gần như chắc chắn.}
+\]
+\end{assumption}
+
+\begin{assumption}[Hai neuron gần-clone]
+\label{ass:near_clone}
+Xét hai neuron $i,j$ thỏa
+\[
+w_j = w_i - \delta \norm{w_i}\hat e,
+\]
+trong đó $\hat e$ là vector đơn vị, $\delta > 0$ nhỏ, và
+\[
+v_i = v_j.
+\]
+\end{assumption}
+
+\begin{assumption}[Kiểm soát vùng bất đồng dưới log-concavity]
+\label{ass:strip}
+Đặt
+\[
+D_{ij} := \{x : w_i^\top x > 0 \ge w_j^\top x\},
+\qquad
+D_{ji} := \{x : w_j^\top x > 0 \ge w_i^\top x\},
+\]
+và
+\[
+\mathrm{strip} := D_{ij}\cup D_{ji},
+\qquad
+P_{\mathrm{strip}} := \Pr(x \in \mathrm{strip}).
+\]
+
+Ký hiệu các pháp tuyến đã chuẩn hóa
+\[
+\bar w_i := \frac{w_i}{\norm{w_i}},
+\qquad
+\bar w_j := \frac{w_j}{\norm{w_j}}.
+\]
+
+Ta giả sử phân phối của $x$ thuộc một lớp regular, chẳng hạn isotropic
+log-concave hoặc nearly log-concave, sao cho tồn tại các hằng số
+$c_{\mathrm{ang}}, C_{\mathrm{ang}} > 0$ với mọi unit vectors $u,v$:
+\[
+c_{\mathrm{ang}}\,\theta(u,v)
+\le
+\Pr\!\bigl(\mathrm{sign}(u^\top x)\neq \mathrm{sign}(v^\top x)\bigr)
+\le
+C_{\mathrm{ang}}\,\theta(u,v).
+\]
+
+Trong chứng minh này, ta áp dụng trực tiếp với $u=\bar w_i$ và $v=\bar w_j$,
+nên
+\[
+c_{\mathrm{ang}}\,\theta(\bar w_i,\bar w_j)
+\le
+P_{\mathrm{strip}}
+\le
+C_{\mathrm{ang}}\,\theta(\bar w_i,\bar w_j).
+\]
+\end{assumption}
+
+\begin{remark}[Hậu thuẫn lý thuyết cho giả thiết này]
+Giả thiết trên bám sát các kết quả về \emph{disagreement} của hai homogeneous
+halfspaces dưới các phân phối log-concave. Cụ thể, Balcan và Long (COLT 2013)
+chứng minh rằng dưới isotropic log-concave, và rộng hơn là nearly
+log-concave, xác suất bất đồng của hai halfspaces tỷ lệ tuyến tính với góc
+giữa hai pháp tuyến chuẩn hóa. Vì vậy, ở đây ta không cần giả sử trực tiếp
+một bound theo $\delta \norm{w_i}$ nữa; điều tự nhiên hơn là điều khiển
+$P_{\mathrm{strip}}$ theo $\theta(\bar w_i,\bar w_j)$.
+\end{remark}
+
+\begin{assumption}[Gần một cloning manifold / equitable partition]
+\label{ass:clone_manifold}
+Xét vector đơn vị phản đối xứng
+\[
+u_- := \frac{e_i - e_j}{\sqrt 2} \in \R^m.
+\]
+Ta giả sử tồn tại một ma trận đối xứng tham chiếu
+\[
+G^{\mathrm{cl}} \in \R^{m\times m}
+\]
+và một perturbation đối xứng
+\[
+E := G - G^{\mathrm{cl}}
+\]
+sao cho cặp $(i,j)$ nằm trong cùng một \emph{cloning block} của
+$G^{\mathrm{cl}}$, theo nghĩa
+\[
+G^{\mathrm{cl}}_{ii} = G^{\mathrm{cl}}_{jj},
+\qquad
+G^{\mathrm{cl}}_{ik} = G^{\mathrm{cl}}_{jk}\ \text{ với mọi } k \notin \{i,j\}.
+\]
+
+Đặt
+\[
+\lambda_{\mathrm{cl}} := u_-^\top G^{\mathrm{cl}} u_-.
+\]
+Ta giả sử thêm tồn tại một eigengap
+\[
+\Delta_{\mathrm{gap}} > 0
+\]
+quanh $\lambda_{\mathrm{cl}}$ đối với $G^{\mathrm{cl}}$, và perturbation đủ nhỏ:
+\[
+\norm{E}_{\op} \le \varepsilon_{\mathrm{cl}} < \frac{\Delta_{\mathrm{gap}}}{2}.
+\]
+\end{assumption}
+
+\begin{remark}[Ý nghĩa theo paper về cloning manifolds]
+Trong ngôn ngữ của paper \emph{Barriers for Learning in an Evolving World},
+$G^{\mathrm{cl}}$ đóng vai trò ma trận trên một cloning manifold hay một equitable
+partition đúng hẳn: các unit trong cùng block nhìn phần còn lại của mạng theo
+cùng một cách. Khi đó $u_-$ là mode phản đối xứng tự nhiên của block clone.
+
+Ma trận $G$ hiện tại không cần có đối xứng đúng hẳn; nó chỉ cần là một
+perturbation nhỏ của $G^{\mathrm{cl}}$. Đây là cách viết realistic hơn nhiều so
+với việc yêu cầu ngay từ đầu rằng $u_-$ phải là eigenvector chính xác của $G$.
+\end{remark}
+
+\section{Các đại lượng chính}
+
+Ta định nghĩa \emph{clone-curvature proxy}
+\[
+\kappa_{\mathrm{clone}}^{(ij)}
+:=
+G_{ii} + G_{jj} - 2G_{ij}.
+\]
+
+Đây là đại lượng rất tự nhiên, vì
+\[
+u_-^\top G u_- = \frac{1}{2}\kappa_{\mathrm{clone}}^{(ij)}.
+\]
+Do đó $\kappa_{\mathrm{clone}}^{(ij)}$ đo độ cong của $G$ theo hướng phản đối
+xứng giữa neuron $i$ và $j$, nhưng \emph{không nên} gọi ngay là eigenvalue của
+toàn bộ $G$ nếu chưa có thêm giả thiết đối xứng.
+
+Đặt thêm
+\[
+B_\ell^{\mathrm{strip}}
+:=
+\E\!\left[
+\left(\frac{\partial \mathcal L}{\partial f}\right)^2
+\middle|
+x \in \mathrm{strip}
+\right].
+\]
+
+\section{Phát biểu kết quả}
+
+\begin{proposition}[Công thức chính xác cho clone-curvature proxy]
+\label{prop:kappa_exact}
+Dưới Giả thiết~\ref{ass:loss_bounded} và~\ref{ass:near_clone}, ta có đẳng thức
+\[
+\kappa_{\mathrm{clone}}^{(ij)}
+=
+v_i^2 B_\ell^{\mathrm{strip}} P_{\mathrm{strip}}.
+\]
+Do đó
+\[
+0 \le \kappa_{\mathrm{clone}}^{(ij)} \le v_i^2 B_y^2 P_{\mathrm{strip}}.
+\]
+\end{proposition}
+
+\begin{theorem}[Clone-curvature suy giảm khi tiến gần manifold clone]
+\label{thm:clone_proxy}
+Dưới Giả thiết~\ref{ass:loss_bounded}, \ref{ass:near_clone}, và
+\ref{ass:strip}, clone-curvature proxy thỏa
+\[
+\kappa_{\mathrm{clone}}^{(ij)}
+\le
+v_i^2 B_y^2 C_{\mathrm{ang}}\, \theta(\bar w_i,\bar w_j).
+\]
+Hơn nữa, nếu $\delta < 1/2$ thì
+\[
+\theta(\bar w_i,\bar w_j) \le \frac{\pi\delta}{1-\delta} \le 2\pi\delta.
+\]
+Do đó
+\[
+\kappa_{\mathrm{clone}}^{(ij)} = O(\delta).
+\]
+
+Nếu ngoài ra tồn tại hằng số $b_{\mathrm{strip}} > 0$ sao cho
+\[
+B_\ell^{\mathrm{strip}} \ge b_{\mathrm{strip}},
+\]
+và perturbation là transversal theo nghĩa
+\[
+\norm{\Pi_{w_i^\perp}\hat e} \ge c_\perp > 0,
+\]
+thì
+\[
+\kappa_{\mathrm{clone}}^{(ij)} = \Theta(\delta).
+\]
+
+Trong trường hợp mạnh hơn, nếu
+\[
+P_{\mathrm{strip}} = \Theta(\delta^2),
+\]
+thì
+\[
+\kappa_{\mathrm{clone}}^{(ij)} = \Theta(\delta^2)
+\]
+miễn là $B_\ell^{\mathrm{strip}}$ vẫn bị chặn dưới bởi một hằng số dương.
+\end{theorem}
+
+\begin{theorem}[Khuếch đại của K-FAC gần mode phản đối xứng]
+\label{thm:clone_amp}
+Dưới Giả thiết~\ref{ass:loss_bounded}, \ref{ass:near_clone},
+\ref{ass:strip}, \ref{ass:clone_manifold}, tồn tại một eigenvector đơn vị
+\[
+q_- \in \R^m
+\]
+của $G$ với eigenvalue $\lambda_-$ sao cho
+\[
+\abs{\lambda_- - \kappa_{\mathrm{clone}}^{(ij)}/2}
+\le
+2\varepsilon_{\mathrm{cl}},
+\]
+và
+\[
+\sin \angle(q_-,u_-)
+\le
+\frac{\varepsilon_{\mathrm{cl}}}{\Delta_{\mathrm{gap}}-\varepsilon_{\mathrm{cl}}}.
+\]
+
+Xét thành phần cập nhật được chiếu trái lên mode này:
+\[
+q_-^\top \Delta W \in \R^{1\times d}.
+\]
+Nếu $\Delta W^{\mathrm{SGD}}$ và $\Delta W^{\mathrm{NGD}}$ lần lượt là cập nhật của
+SGD và K-FAC/NGD (với quy ước K-FAC $\Delta W^{\mathrm{NGD}} = -\eta(G+\gamma I)^{-1}\nabla_W\mathcal{L}\,(A+\gamma I)^{-1}$),
+thì thành phần chiếu trái thỏa:
+\[
+\frac{\norm{q_-^\top \Delta W^{\mathrm{NGD}}}}
+{\norm{q_-^\top \Delta W^{\mathrm{SGD}}}}
+\ge
+\frac{1}{\norm{A+\gamma I}_{\op}\,\bigl(\gamma + \kappa_{\mathrm{clone}}^{(ij)}/2 + 2\varepsilon_{\mathrm{cl}}\bigr)}.
+\]
+
+Do đó, khi $\delta \to 0$, $\kappa_{\mathrm{clone}}^{(ij)} \to 0$ và $\varepsilon_{\mathrm{cl}} \to 0$, ta có
+\[
+\liminf_{\delta \to 0}
+\frac{\norm{q_-^\top \Delta W^{\mathrm{NGD}}}}
+{\norm{q_-^\top \Delta W^{\mathrm{SGD}}}}
+\ge
+\frac{1}{\gamma \norm{A+\gamma I}_{\op}}.
+\]
+\end{theorem}
+
+\begin{remark}[Điểm khác nhau với bản phát biểu ban đầu]
+Kết quả khuếch đại ở trên là một mệnh đề \emph{gần mode phản đối xứng} chứ không
+phải một mệnh đề chính xác trên $u_-$. Điều này phản ánh đúng tinh thần cloning
+manifold: ở trên manifold thì mode phản đối xứng là exact, còn ở gần manifold thì
+nó chỉ còn đúng xấp xỉ.
+
+So với bản phát biểu cũ, ta không còn khẳng định trực tiếp về
+\[
+\norm{\Delta w_i^{\mathrm{NGD}} - \Delta w_j^{\mathrm{NGD}}}.
+\]
+Đổi lại, statement mới thực tế hơn: nó chỉ yêu cầu mạng đang ở gần một
+\emph{cloning manifold} (hay một \emph{equitable partition}), chứ không cần
+đối xứng cặp-clone đúng hẳn tại $G$.
+\end{remark}
+
+\section{Chứng minh chi tiết}
+
+\subsection*{Bước 1: Viết các phần tử của $G$}
+
+Với
+\[
+g_k = \frac{\partial \mathcal L}{\partial f}\, v_k \,\Ind(w_k^\top x > 0),
+\]
+ta có
+\begin{align}
+G_{ii}
+&=
+\E[g_i^2]
+=
+v_i^2 \E\!\left[
+\left(\frac{\partial \mathcal L}{\partial f}\right)^2
+\Ind(w_i^\top x > 0)
+\right], \\
+G_{jj}
+&=
+v_j^2 \E\!\left[
+\left(\frac{\partial \mathcal L}{\partial f}\right)^2
+\Ind(w_j^\top x > 0)
+\right], \\
+G_{ij}
+&=
+\E[g_i g_j]
+=
+v_i v_j \E\!\left[
+\left(\frac{\partial \mathcal L}{\partial f}\right)^2
+\Ind(w_i^\top x > 0)\Ind(w_j^\top x > 0)
+\right].
+\end{align}
+
+\subsection*{Bước 2: Tính chính xác clone-curvature proxy}
+
+Vì $v_i = v_j$, ta có
+\begin{align}
+G_{ii} - G_{ij}
+&=
+v_i^2 \E\!\left[
+\left(\frac{\partial \mathcal L}{\partial f}\right)^2
+\Ind(w_i^\top x > 0)\bigl(1 - \Ind(w_j^\top x > 0)\bigr)
+\right] \\
+&=
+v_i^2 \E\!\left[
+\left(\frac{\partial \mathcal L}{\partial f}\right)^2
+\Ind_{D_{ij}}(x)
+\right].
+\end{align}
+
+Tương tự,
+\[
+G_{jj} - G_{ij}
+=
+v_i^2 \E\!\left[
+\left(\frac{\partial \mathcal L}{\partial f}\right)^2
+\Ind_{D_{ji}}(x)
+\right].
+\]
+
+Cộng lại:
+\begin{align}
+\kappa_{\mathrm{clone}}^{(ij)}
+&=
+(G_{ii}-G_{ij}) + (G_{jj}-G_{ij}) \\
+&=
+v_i^2 \E\!\left[
+\left(\frac{\partial \mathcal L}{\partial f}\right)^2
+\Ind_{\mathrm{strip}}(x)
+\right].
+\end{align}
+
+Theo định nghĩa của $B_\ell^{\mathrm{strip}}$, suy ra ngay
+\[
+\kappa_{\mathrm{clone}}^{(ij)}
+=
+v_i^2 B_\ell^{\mathrm{strip}} P_{\mathrm{strip}}.
+\]
+Điều này chứng minh Mệnh đề~\ref{prop:kappa_exact}.
+
+\subsection*{Bước 3: Hệ quả định lượng từ disagreement của hai halfspaces}
+
+Theo Giả thiết~\ref{ass:loss_bounded},
+\[
+\left(\frac{\partial \mathcal L}{\partial f}\right)^2 \le B_y^2.
+\]
+Kết hợp với Mệnh đề~\ref{prop:kappa_exact}:
+\[
+\kappa_{\mathrm{clone}}^{(ij)}
+\le
+v_i^2 B_y^2 P_{\mathrm{strip}}.
+\]
+
+Áp dụng Giả thiết~\ref{ass:strip}:
+\[
+\kappa_{\mathrm{clone}}^{(ij)}
+\le
+v_i^2 B_y^2 C_{\mathrm{ang}}\, \theta(\bar w_i,\bar w_j).
+\]
+\medskip
+
+Để nối với $\delta$, đặt $a:=w_i$ và $b:=w_j$. Từ
+\[
+\norm{a-b} = \delta \norm{a},
+\qquad
+\norm{b} \ge (1-\delta)\norm{a},
+\]
+ta có bất đẳng thức chuẩn hóa chuẩn:
+\[
+\left\|
+\frac{a}{\norm{a}} - \frac{b}{\norm{b}}
+\right\|
+\le
+\frac{2\norm{a-b}}{\min\{\norm{a},\norm{b}\}}
+\le
+\frac{2\delta}{1-\delta}.
+\]
+Với hai vector đơn vị $u,v$, luôn có
+\[
+\theta(u,v) \le \frac{\pi}{2}\norm{u-v}.
+\]
+Suy ra
+\[
+\theta(\bar w_i,\bar w_j) \le \frac{\pi\delta}{1-\delta}.
+\]
+Vì vậy
+\[
+\kappa_{\mathrm{clone}}^{(ij)} = O(\delta).
+\]
+
+Nếu thêm lower bound
+\[
+B_\ell^{\mathrm{strip}} \ge b_{\mathrm{strip}} > 0
+\]
+và perturbation là transversal:
+\[
+\norm{\Pi_{w_i^\perp}\hat e} \ge c_\perp > 0,
+\]
+thì thành phần vuông góc của $w_j$ đối với hướng của $w_i$ có độ lớn cỡ
+$\delta \norm{w_i}$. Do đó góc giữa $\bar w_i$ và $\bar w_j$ không chỉ là
+$O(\delta)$ mà còn là $\Omega(\delta)$; nói cách khác,
+\[
+\theta(\bar w_i,\bar w_j)=\Theta(\delta).
+\]
+Khi đó dùng cả hai phía của Giả thiết~\ref{ass:strip} và công thức chính xác
+\[
+\kappa_{\mathrm{clone}}^{(ij)}
+=
+v_i^2 B_\ell^{\mathrm{strip}} P_{\mathrm{strip}}
+\]
+tức là
+\[
+\kappa_{\mathrm{clone}}^{(ij)} = \Theta(\delta).
+\]
+
+Trường hợp $P_{\mathrm{strip}} = \Theta(\delta^2)$ được xử lý tương tự.
+
+\subsection*{Bước 4: Từ cloning manifold tham chiếu sang mode riêng gần phản đối xứng}
+
+Theo Giả thiết~\ref{ass:clone_manifold}, trong ma trận tham chiếu
+$G^{\mathrm{cl}}$, cặp $(i,j)$ nằm trong cùng một cloning block. Vì thế vector
+\[
+u_- = \frac{e_i-e_j}{\sqrt 2}
+\]
+là eigenvector của $G^{\mathrm{cl}}$. Hơn nữa,
+\[
+\lambda_{\mathrm{cl}} = u_-^\top G^{\mathrm{cl}} u_-.
+\]
+
+Do $G = G^{\mathrm{cl}} + E$ và $\norm{E}_{\op} \le \varepsilon_{\mathrm{cl}}$,
+định lý Weyl cho ma trận Hermitian cho biết tồn tại một eigenvalue $\lambda_-$ của
+$G$ sao cho
+\[
+\abs{\lambda_- - \lambda_{\mathrm{cl}}} \le \varepsilon_{\mathrm{cl}}.
+\]
+
+\medskip
+
+Mặt khác,
+\[
+\frac{1}{2}\kappa_{\mathrm{clone}}^{(ij)}
+=
+u_-^\top G u_-
+=
+u_-^\top G^{\mathrm{cl}} u_- + u_-^\top E u_-
+=
+\lambda_{\mathrm{cl}} + u_-^\top E u_-.
+\]
+Suy ra
+\[
+\abs{\lambda_{\mathrm{cl}} - \kappa_{\mathrm{clone}}^{(ij)}/2}
+\le
+\norm{E}_{\op}
+\le
+\varepsilon_{\mathrm{cl}}.
+\]
+Kết hợp hai bất đẳng thức trên:
+\[
+\abs{\lambda_- - \kappa_{\mathrm{clone}}^{(ij)}/2}
+\le
+2\varepsilon_{\mathrm{cl}}.
+\]
+
+Cuối cùng, vì quanh $\lambda_{\mathrm{cl}}$ có eigengap
+$\Delta_{\mathrm{gap}}$ và perturbation nhỏ hơn $\Delta_{\mathrm{gap}}/2$,
+định lý Davis--Kahan cho ta một eigenvector đơn vị $q_-$ của $G$ sao cho
+\[
+\sin \angle(q_-,u_-)
+\le
+\frac{\varepsilon_{\mathrm{cl}}}{\Delta_{\mathrm{gap}}-\varepsilon_{\mathrm{cl}}}.
+\]
+Nói cách khác, $q_-$ là một mode riêng thật sự của $G$ và nó vẫn gần hướng phá
+clone lý tưởng $u_-$.
+
+\subsection*{Bước 5: Hệ số khuếch đại của K-FAC trên mode gần phản đối xứng}
+
+Trong K-FAC, quyet định cập nhật cho ma trận trọng số $W \in \R^{m\times d}$ là:
+\[
+\Delta W^{\mathrm{NGD}}
+=
+-\eta \underbrace{(G+\gamma I_m)^{-1}}_{\text{tỡi neuron, } m\times m} \nabla_W \mathcal L \underbrace{(A+\gamma I_d)^{-1}}_{\text{tỡi input, } d\times d}.
+\]
+Lưu ý: $(G+\gamma I)^{-1}$ tác động từ \textbf{trái} lên các hàng (neuron), còn $(A+\gamma I)^{-1}$ tác động từ \textbf{phải} lên các cột (input features). Quy ước này nhất quán với $W \in \R^{m\times d}$.
+
+Chiếu trái lên eigenvector $q_- \in \R^m$:
+\[
+q_-^\top \Delta W^{\mathrm{NGD}}
+=
+-\eta\, q_-^\top (G+\gamma I)^{-1} \nabla_W \mathcal L \,(A+\gamma I)^{-1}.
+\]
+Vì $q_-$ là eigenvector của $G$ với eigenvalue $\lambda_-$, suy ra
+\[
+q_-^\top(G+\gamma I)^{-1} = \frac{1}{\gamma+\lambda_-}\, q_-^\top.
+\]
+Do đó:
+\[
+q_-^\top \Delta W^{\mathrm{NGD}}
+=
+-\frac{\eta}{\gamma+\lambda_-}\, q_-^\top \nabla_W \mathcal L \,(A+\gamma I)^{-1}.
+\]
+Lấy chuẩn và áp dụng $\norm{v(A+\gamma I)^{-1}} \ge \norm{v}/\norm{A+\gamma I}_{\op}$:
+\[
+\norm{q_-^\top \Delta W^{\mathrm{NGD}}}
+\ge
+\frac{\eta}{(\gamma+\lambda_-)\,\norm{A+\gamma I}_{\op}}
+\,\norm{q_-^\top \nabla_W \mathcal L}.
+\]
+
+Với SGD:
+\[
+q_-^\top \Delta W^{\mathrm{SGD}} = -\eta\, q_-^\top \nabla_W \mathcal L,
+\]
+nên $\norm{q_-^\top \Delta W^{\mathrm{SGD}}} = \eta\, \norm{q_-^\top \nabla_W \mathcal L}$.
+
+Chia hai vế:
+\[
+\frac{\norm{q_-^\top \Delta W^{\mathrm{NGD}}}}
+{\norm{q_-^\top \Delta W^{\mathrm{SGD}}}}
+\ge
+\frac{1}{\norm{A+\gamma I}_{\op}\,(\gamma + \lambda_-)}.
+\]
+
+Do $\lambda_- \le \kappa_{\mathrm{clone}}^{(ij)}/2 + 2\varepsilon_{\mathrm{cl}}$ (từ Bước~4):
+\[
+\frac{\norm{q_-^\top \Delta W^{\mathrm{NGD}}}}
+{\norm{q_-^\top \Delta W^{\mathrm{SGD}}}}
+\ge
+\frac{1}{\norm{A+\gamma I}_{\op}\,\bigl(\gamma + \kappa_{\mathrm{clone}}^{(ij)}/2 + 2\varepsilon_{\mathrm{cl}}\bigr)}.
+\]
+
+Khi $\delta \to 0$, $\kappa_{\mathrm{clone}}^{(ij)} \to 0$ (vì $P_{\mathrm{strip}} \to 0$) và $\varepsilon_{\mathrm{cl}} \to 0$
+(theo Giả thiết~\ref{ass:clone_manifold}, vì $G \to G^{\mathrm{cl}}$ khi cặp $(i,j)$ tiến gần cloning manifold), suy ra:
+\[
+\boxed{
+\liminf_{\delta \to 0}
+\frac{\norm{q_-^\top \Delta W^{\mathrm{NGD}}}}
+{\norm{q_-^\top \Delta W^{\mathrm{SGD}}}}
+\ge
+\frac{1}{\gamma \norm{A+\gamma I}_{\op}}
+=
+\frac{1}{\gamma(\lambda_{\max}(A)+\gamma)}.
+}\qed
+\]
+
+\section{Kết luận trực giác}
+
+Kết quả chặt hơn ở trên cho thấy:
+\begin{enumerate}
+    \item Cặp neuron gần-clone tạo ra một vùng ``strip'' nơi hai cổng ReLU bất
+    đồng.
+    \item Độ cong theo hướng phản đối xứng của cặp đó bằng đúng
+    \[
+    \kappa_{\mathrm{clone}}^{(ij)} = v_i^2 B_\ell^{\mathrm{strip}} P_{\mathrm{strip}}.
+    \]
+    \item Khi xác suất strip nhỏ, độ cong này nhỏ.
+    \item Gần một cloning manifold/equitable partition, luôn tồn tại một mode
+    riêng thật sự của $G$ nằm gần hướng phản đối xứng lý tưởng $u_-$.
+    \item K-FAC chia cho độ cong nhỏ trên mode gần phản đối xứng đó, nên vẫn
+    khuếch đại lực phá clone so với SGD.
+\end{enumerate}
+
+\begin{remark}[Giới hạn của kết quả]
+Nếu $\delta = 0$ chính xác, thì clone manifold là một singularity thật sự. Khi đó
+gradient xác định theo hướng phá đối xứng có thể bằng $0$, và không có thuật toán
+gradient xác định nào tự thoát ra được nếu không có nhiễu hoặc perturbation ngoài.
+\end{remark}
+
+\end{document}
