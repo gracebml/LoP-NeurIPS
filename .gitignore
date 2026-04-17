@@ -1,0 +1,23 @@
+# checkpoints / weights
+*.pt
+*.pth
+*.ckpt
+
+# dataset
+data/
+datasets/
+
+# logs
+logs/
+*.log
+
+# notebook outputs
+.ipynb_checkpoints/
+
+# large files
+*.zip
+*.tar
+*.npy
+*.npz
+
+./study/*.md

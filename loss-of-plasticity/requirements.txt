@@ -1,0 +1,14 @@
+torch==2.1.0
+torchvision==0.16.0
+free-mujoco-py==2.1.6
+gym==0.23.1
+pycparser==2.21
+zipp==3.16.2
+sympy==1.9
+setuptools==44.0.0
+numpy==1.24.1
+mlproj-manager==0.0.29
+matplotlib==3.7.2
+PyYAML==6.0.1
+tqdm==4.66.1
+scipy==1.11.2
