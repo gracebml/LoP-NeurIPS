@@ -635,10 +635,11 @@ class IncrementalCIFARExperiment(Experiment):
 def main(arguments=None):
 
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--config', action="store", type=str,
+    parser.add_argument('-c', '--config', action="store", type=str,
                         default='./incremental_cifar/cfg/base_deep_learning_system.json',
                         help="Path to the file containing the parameters for the experiment.")
-    parser.add_argument("--experiment-index", action="store", type=int, default=0,
+    parser.add_argument("--index", "--experiment-index", dest="experiment_index",
+                        action="store", type=int, default=0,
                         help="Index for the run; this will determine the random seed and the name of the results.")
     parser.add_argument("--verbose", action="store_true", default=False,
                         help="Whether to print extra information about the experiment as it's running.")
@@ -653,7 +654,7 @@ def main(arguments=None):
     if "results_dir" not in experiment_parameters.keys() or experiment_parameters["results_dir"] == "":
         experiment_parameters["results_dir"] = os.path.join(file_path, "results")
     if "experiment_name" not in experiment_parameters.keys() or experiment_parameters["experiment_name"] == "":
-        experiment_parameters["experiment_name"] = os.path.splitext(os.path.basename(args.config_file))
+        experiment_parameters["experiment_name"] = os.path.splitext(os.path.basename(args.config))[0]
 
     initial_time = time.perf_counter()
     exp = IncrementalCIFARExperiment(experiment_parameters,
