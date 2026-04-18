@@ -1,6 +1,6 @@
 """
 Download datasets for loss-of-plasticity experiments.
-Datasets: MNIST, CIFAR-10, CIFAR-100, Continual ImageNet, Two Moons.
+Datasets: MNIST, CIFAR-10, CIFAR-100, Continual ImageNet, Tiny ImageNet, Two Moons.
 """
 
 import os
@@ -10,6 +10,9 @@ import numpy as np
 import torch
 import torchvision
 import torchvision.transforms as transforms
+import urllib.request
+import zipfile
+from PIL import Image
 from sklearn.datasets import make_moons
 
 DATA_DIR = "data"
@@ -52,7 +55,9 @@ def download_mnist():
         y_test = labels
     
     # Save as pickle (matching load_mnist.py format)
-    mnist_path = os.path.join(DATA_DIR, "mnist_")
+    out_dir = os.path.join(DATA_DIR, "mnist")
+    os.makedirs(out_dir, exist_ok=True)
+    mnist_path = os.path.join(out_dir, "mnist_")
     with open(mnist_path, "wb") as f:
         pickle.dump([x_train, y_train, x_test, y_test], f)
     
@@ -60,19 +65,142 @@ def download_mnist():
     print(f"  Train: {x_train.shape}, Test: {x_test.shape}")
 
 
+def download_cifar10():
+    """
+    Download CIFAR-10 dataset and save as pickle file.
+    Output: data/cifar10_ containing [x_train, y_train, x_test, y_test]
+    Shape stays (N, C, H, W) to match CNN inputs in loss-of-plasticity.
+    """
+    print("Downloading CIFAR-10...")
+    os.makedirs(DATA_DIR, exist_ok=True)
+    
+    transform = transforms.Compose([transforms.ToTensor()])
+    
+    train_dataset = torchvision.datasets.CIFAR10(root=DATA_DIR, train=True, transform=transform, download=True)
+    test_dataset = torchvision.datasets.CIFAR10(root=DATA_DIR, train=False, transform=transform, download=True)
+    
+    train_loader = torch.utils.data.DataLoader(dataset=train_dataset, batch_size=50000, shuffle=False)
+    test_loader = torch.utils.data.DataLoader(dataset=test_dataset, batch_size=10000, shuffle=False)
+    
+    x_train, y_train = next(iter(train_loader))
+    x_test, y_test = next(iter(test_loader))
+    
+    out_dir = os.path.join(DATA_DIR, "cifar10")
+    os.makedirs(out_dir, exist_ok=True)
+    cifar10_path = os.path.join(out_dir, "cifar10_")
+    with open(cifar10_path, "wb") as f:
+        pickle.dump([x_train, y_train, x_test, y_test], f)
+    
+    print(f"CIFAR-10 saved to {cifar10_path}")
+    print(f"  Train: {x_train.shape}, Test: {x_test.shape}")
+
+
 def download_cifar100():
     """
-    Download CIFAR-100 dataset.
-    Used by mlproj_manager.problems.CifarDataSet which expects standard torchvision format.
+    Download CIFAR-100 dataset and save as pickle file.
+    Output: data/cifar100_ containing [x_train, y_train, x_test, y_test]
+    Shape stays (N, C, H, W) to match CNN inputs in loss-of-plasticity.
     """
     print("Downloading CIFAR-100...")
     os.makedirs(DATA_DIR, exist_ok=True)
     
-    # Download train and test sets
-    torchvision.datasets.CIFAR100(root=DATA_DIR, train=True, download=True)
-    torchvision.datasets.CIFAR100(root=DATA_DIR, train=False, download=True)
+    transform = transforms.Compose([transforms.ToTensor()])
     
-    print(f"CIFAR-100 saved to {DATA_DIR}/cifar-100-python/")
+    train_dataset = torchvision.datasets.CIFAR100(root=DATA_DIR, train=True, transform=transform, download=True)
+    test_dataset = torchvision.datasets.CIFAR100(root=DATA_DIR, train=False, transform=transform, download=True)
+    
+    train_loader = torch.utils.data.DataLoader(dataset=train_dataset, batch_size=50000, shuffle=False)
+    test_loader = torch.utils.data.DataLoader(dataset=test_dataset, batch_size=10000, shuffle=False)
+    
+    x_train, y_train = next(iter(train_loader))
+    x_test, y_test = next(iter(test_loader))
+    
+    out_dir = os.path.join(DATA_DIR, "cifar100")
+    os.makedirs(out_dir, exist_ok=True)
+    cifar100_path = os.path.join(out_dir, "cifar100_")
+    with open(cifar100_path, "wb") as f:
+        pickle.dump([x_train, y_train, x_test, y_test], f)
+    
+    print(f"CIFAR-100 saved to {cifar100_path}")
+    print(f"  Train: {x_train.shape}, Test: {x_test.shape}")
+
+
+def download_tiny_imagenet():
+    """
+    Download Tiny ImageNet dataset and save as pickle file.
+    Output: data/tiny_imagenet_ containing [x_train, y_train, x_test, y_test]
+    Shape stays (N, C, H, W) to match CNN inputs in loss-of-plasticity.
+    """
+    print("Downloading Tiny ImageNet...")
+    out_dir = os.path.join(DATA_DIR, "tinyImagenet")
+    os.makedirs(out_dir, exist_ok=True)
+    
+    url = "https://cs231n.stanford.edu/tiny-imagenet-200.zip"
+    zip_path = os.path.join(out_dir, "tiny-imagenet-200.zip")
+    tiny_base_dir = os.path.join(out_dir, "tiny-imagenet-200")
+    
+    if not os.path.exists(tiny_base_dir):
+        print(f"Downloading from {url}...")
+        # Use wget or curl instead of urllib.request to avoid 28KB error block
+        os.system(f"wget -q --show-progress -O {zip_path} {url} || curl -L -o {zip_path} {url}")
+        if not os.path.exists(zip_path) or os.path.getsize(zip_path) < 1000000:
+            print("Download failed or zip is corrupted. Please try again.")
+            return
+        print("Extracting Tiny ImageNet...")
+        with zipfile.ZipFile(zip_path, "r") as zip_ref:
+            zip_ref.extractall(out_dir)
+        os.remove(zip_path)
+    
+    print("Processing Tiny ImageNet...")
+    transform = transforms.Compose([transforms.ToTensor()])
+    
+    # Load Training Set
+    train_dir = os.path.join(tiny_base_dir, 'train')
+    train_dataset = torchvision.datasets.ImageFolder(train_dir, transform=transform)
+    # 100,000 images is safe to load into RAM (takes ~1.2GB)
+    train_loader = torch.utils.data.DataLoader(dataset=train_dataset, batch_size=100000, shuffle=False)
+    print("Loading Tiny ImageNet train images into memory...")
+    x_train, y_train = next(iter(train_loader))
+    
+    # Load Validation Set (used as test set)
+    val_dir = os.path.join(tiny_base_dir, 'val')
+    val_images_dir = os.path.join(val_dir, 'images')
+    
+    print("Loading Tiny ImageNet test images into memory...")
+    with open(os.path.join(val_dir, 'val_annotations.txt'), 'r') as f:
+        val_annots = f.readlines()
+        
+    class_to_idx = train_dataset.class_to_idx
+    val_images = []
+    val_labels = []
+    
+    for line in val_annots:
+        parts = line.strip().split('\t')
+        img_name = parts[0]
+        class_name = parts[1]
+        
+        img_path = os.path.join(val_images_dir, img_name)
+        img = Image.open(img_path).convert('RGB')
+        val_images.append(transform(img))
+        val_labels.append(class_to_idx[class_name])
+        
+    x_test = torch.stack(val_images)
+    y_test = torch.tensor(val_labels)
+    
+    # Clean up to free memory before converting
+    del train_dataset, train_loader, val_images, val_labels
+    import gc
+    gc.collect()
+
+    # Save as pickle
+    tiny_path = os.path.join(out_dir, "tiny_imagenet_")
+    print(f"Saving Tiny ImageNet to {tiny_path} (this may take a minute)...")
+    with open(tiny_path, "wb") as f:
+        # Save large pickles efficiently using protocol=4
+        pickle.dump([x_train, y_train, x_test, y_test], f, protocol=4)
+        
+    print(f"Tiny ImageNet saved to {tiny_path}")
+    print(f"  Train: {x_train.shape}, Test: {x_test.shape}")
 
 
 def download_imagenet_preprocessed():
@@ -102,23 +230,11 @@ def download_imagenet_preprocessed():
     
     # Extract
     print("Extracting ImageNet data...")
-    import zipfile
     with zipfile.ZipFile(zip_path, "r") as zip_ref:
         zip_ref.extractall(DATA_DIR)
     
     os.remove(zip_path)
     print(f"ImageNet saved to {imagenet_dir}/")
-
-
-def download_cifar10():
-    """Download CIFAR-10 dataset."""
-    print("Downloading CIFAR-10...")
-    os.makedirs(DATA_DIR, exist_ok=True)
-    
-    torchvision.datasets.CIFAR10(root=DATA_DIR, train=True, download=True)
-    torchvision.datasets.CIFAR10(root=DATA_DIR, train=False, download=True)
-    
-    print(f"CIFAR-10 saved to {DATA_DIR}/cifar-10-batches-py/")
 
 
 def generate_two_moons():
@@ -142,7 +258,9 @@ def generate_two_moons():
     y_test = torch.from_numpy(y_test).long()
     
     # Save as pickle (same format as MNIST)
-    two_moons_path = os.path.join(DATA_DIR, "two_moons_")
+    out_dir = os.path.join(DATA_DIR, "two_moons")
+    os.makedirs(out_dir, exist_ok=True)
+    two_moons_path = os.path.join(out_dir, "two_moons_")
     with open(two_moons_path, "wb") as f:
         pickle.dump([x_train, y_train, x_test, y_test], f)
     
@@ -155,17 +273,20 @@ def main():
     print("Downloading datasets for loss-of-plasticity")
     print("=" * 50)
     
-    download_mnist()
+    # download_mnist()
+    # print()
+    
+    # download_cifar10()
+    # print()
+    
+    # download_cifar100()
+    # print()
+    
+    download_tiny_imagenet()
     print()
     
-    download_cifar10()
-    print()
-    
-    download_cifar100()
-    print()
-    
-    download_imagenet_preprocessed()
-    print()
+    # download_imagenet_preprocessed()
+    # print()
     
     generate_two_moons()
     print()

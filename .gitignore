@@ -19,5 +19,3 @@ logs/
 *.tar
 *.npy
 *.npz
-
-./study/*.md
