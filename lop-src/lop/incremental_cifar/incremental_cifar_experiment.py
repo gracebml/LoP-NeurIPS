@@ -632,7 +632,7 @@ class IncrementalCIFARExperiment(Experiment):
         store_object_with_several_attempts(self.net.state_dict(), file_path, storing_format="torch", num_attempts=10)
 
 
-def main():
+def main(arguments=None):
 
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--config', action="store", type=str,
@@ -642,7 +642,7 @@ def main():
                         help="Index for the run; this will determine the random seed and the name of the results.")
     parser.add_argument("--verbose", action="store_true", default=False,
                         help="Whether to print extra information about the experiment as it's running.")
-    args = parser.parse_args()
+    args = parser.parse_args(arguments)
 
     with open(args.config, 'r') as config_file:
         experiment_parameters = json.load(config_file)

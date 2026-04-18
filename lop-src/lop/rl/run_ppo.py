@@ -69,14 +69,14 @@ def load_checkpoint(cfg, device, learner):
     return step, learner
 
 
-def main():
+def main(arguments=None):
     # Setup
     parser = argparse.ArgumentParser()
     parser.add_argument('-c', '--config', required=False, type=str, default='./cfg/ant/std.yml')
     parser.add_argument('-s', '--seed', required=False, type=int, default="1")
     parser.add_argument('-d', '--device', required=False, default='cpu')
 
-    args = parser.parse_args()
+    args = parser.parse_args(arguments)
     if args.device: device = args.device
     else: device = 'cuda' if torch.cuda.is_available() else 'cpu'
     cfg = yaml.safe_load(open(args.config))

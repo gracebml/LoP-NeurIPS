@@ -325,13 +325,13 @@ def fade_optimizer_state(opt, opt_type):
         opt.reset_stats()
 
 
-def main():
+def main(arguments=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('-c', '--config', required=True, type=str,
                         help='Path to YAML config file')
     parser.add_argument('-s', '--seed', type=int, default=1)
     parser.add_argument('-d', '--device', type=str, default='')
-    args = parser.parse_args()
+    args = parser.parse_args(arguments)
 
     if args.device:
         device = args.device
