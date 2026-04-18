@@ -1,0 +1,26 @@
+# SophiaH + SDP config for PPO on Ant-v4
+env_name: 'Ant-v4'
+optimizer: 'sophia'
+lr: 0.0001
+betas: [0.965, 0.99]
+weight_decay: 0.0001
+eps: 0.0001
+clip_threshold: 1.0
+lazy_hessian: 10
+n_samples: 1
+
+sdp_gamma: 0.3
+sdp_interval: 100000
+
+act_type: 'ReLU'
+n_steps: 1e7
+g: 0.99
+lm: 0.95
+bs: 2048
+n_itrs: 10
+n_slices: 16
+clip_eps: 0.2
+h_dim: [256, 256]
+init: 'lecun'
+grad_clip: 1.0
+dir: 'results/rl_2nd/sophia_sdp/'

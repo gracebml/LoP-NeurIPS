@@ -23,6 +23,9 @@ from mlproj_manager.file_management.file_and_directory_management import store_o
 
 from lop.nets.torchvision_modified_resnet import build_resnet18, kaiming_init_resnet_module
 from lop.algos.res_gnt import ResGnT
+from lop.algos.sdp import apply_sdp
+from lop.algos.ema import EMAWrapper
+from lop.optimizers import get_optimizer
 from lop.metrics import compute_task_metrics, print_task_summary
 
 
@@ -71,6 +74,14 @@ class IncrementalCIFARExperiment(Experiment):
         self.weight_decay = exp_params["weight_decay"]
         self.momentum = exp_params["momentum"]
 
+        # second-order optimizer parameters (backward-compatible: default = sgd)
+        self.optimizer_type = access_dict(exp_params, "optimizer_type", default="sgd", val_type=str)
+        self.sdp_gamma = access_dict(exp_params, "sdp_gamma", default=0.0, val_type=float)
+        self.sdp_freq = access_dict(exp_params, "sdp_freq", default=0, val_type=int)  # 0 = only at task boundary
+        self.use_ema = access_dict(exp_params, "use_ema", default=False, val_type=bool)
+        self.ema_decay = access_dict(exp_params, "ema_decay", default=0.999, val_type=float)
+        self._optimizer_params = access_dict(exp_params, "optimizer_params", default={}, val_type=dict)
+
         # network resetting parameters
         self.reset_head = access_dict(exp_params, "reset_head", default=False, val_type=bool)
         self.reset_network = access_dict(exp_params, "reset_network", default=False, val_type=bool)
@@ -104,9 +115,11 @@ class IncrementalCIFARExperiment(Experiment):
         self.net = build_resnet18(num_classes=self.num_classes, norm_layer=torch.nn.BatchNorm2d)
         self.net.apply(kaiming_init_resnet_module)
 
-        # initialize optimizer
-        self.optim = torch.optim.SGD(self.net.parameters(), lr=self.stepsize, momentum=self.momentum,
-                                     weight_decay=self.weight_decay)
+        # initialize optimizer (configurable: sgd, adahessian, sophia, kfac, sassha)
+        self.optim = self._build_optimizer()
+
+        # initialize EMA if enabled
+        self.ema = EMAWrapper(self.net, self.ema_decay) if self.use_ema else None
 
         # define loss function
         self.loss = torch.nn.CrossEntropyLoss(reduction="mean")
@@ -391,20 +404,15 @@ class IncrementalCIFARExperiment(Experiment):
                 image = sample["image"].to(self.device)
                 label = sample["label"].to(self.device)
 
-                # reset gradients
-                for param in self.net.parameters(): param.grad = None   # apparently faster than optim.zero_grad()
-
-                # compute prediction and loss
+                # compute prediction, loss, and update weights (dispatch by optimizer type)
                 current_features = [] if self.use_cbp else None
-                predictions = self.net.forward(image, current_features)[:, self.all_classes[:self.current_num_classes]]
-                current_reg_loss = self.loss(predictions, label)
-                current_loss = current_reg_loss.detach().clone()
+                predictions, current_loss = self._training_step(
+                    image, label, current_features)
 
-                # backpropagate and update weights
-                current_reg_loss.backward()
-                self.optim.step()
                 if self.use_cbp: self.resgnt.gen_and_test(current_features)
                 self.inject_noise()
+                if self.ema is not None:
+                    self.ema.update(self.net)
 
                 # store summaries
                 current_accuracy = torch.mean((predictions.argmax(axis=1) == label.argmax(axis=1)).to(torch.float32))
@@ -458,6 +466,70 @@ class IncrementalCIFARExperiment(Experiment):
                 g['lr'] = current_stepsize
             self._print("\tCurrent stepsize: {0:.5f}".format(current_stepsize))
 
+    def _build_optimizer(self):
+        """Build optimizer using the factory, dispatching by optimizer_type."""
+        opt_type = self.optimizer_type.lower()
+        kwargs = dict(lr=self.stepsize, weight_decay=self.weight_decay)
+
+        if opt_type == 'sgd':
+            kwargs['momentum'] = self.momentum
+        else:
+            # Merge optimizer-specific params from config
+            kwargs.update(self._optimizer_params)
+
+        return get_optimizer(opt_type, self.net, **kwargs)
+
+    def _training_step(self, image, label, current_features):
+        """Optimizer-aware training step. Returns (predictions, loss_value)."""
+        opt_type = self.optimizer_type.lower()
+        active_classes = self.all_classes[:self.current_num_classes]
+
+        if opt_type == 'sassha':
+            # SASSHA two-pass protocol: forward → backward → perturb → forward(perturbed) → backward(create_graph) → unperturb → step
+            self.optim.zero_grad()
+            predictions = self.net.forward(image, current_features)[:, active_classes]
+            loss = self.loss(predictions, label)
+            loss.backward()
+            self.optim.perturb_weights(zero_grad=True)
+            pred_pert = self.net.forward(image)[:, active_classes]
+            loss_pert = self.loss(pred_pert, label)
+            loss_pert.backward(create_graph=True)
+            self.optim.unperturb()
+            self.optim.step()
+            self.optim.zero_grad(set_to_none=True)
+            return predictions, loss.detach().clone()
+
+        elif opt_type in ('adahessian', 'sophia', 'sophiah'):
+            # Hessian-based: need create_graph=True for second-order info
+            self.optim.zero_grad()
+            predictions = self.net.forward(image, current_features)[:, active_classes]
+            loss = self.loss(predictions, label)
+            loss.backward(create_graph=True)
+            self.optim.step()
+            self.optim.zero_grad(set_to_none=True)
+            return predictions, loss.detach().clone()
+
+        else:
+            # SGD, Adam, AdamW, KFAC — KFAC is second-order but uses hooks, not create_graph
+            for param in self.net.parameters(): param.grad = None
+            predictions = self.net.forward(image, current_features)[:, active_classes]
+            loss = self.loss(predictions, label)
+            loss.backward()
+            self.optim.step()
+            return predictions, loss.detach().clone()
+
+    def _fade_optimizer_state_after_sdp(self):
+        """Fade optimizer state after SDP to prevent phase mismatch.
+        Mirrors logic from notebooks/cifar/cifar100-secondorder-sdp.py:1270-1286."""
+        opt_type = self.optimizer_type.lower()
+        if opt_type in ('adahessian', 'sophia', 'sophiah', 'sassha'):
+            for state in self.optim.state.values():
+                if 'exp_avg' in state: state['exp_avg'].mul_(0.5)
+                if 'exp_hessian_diag' in state: state['exp_hessian_diag'].mul_(0.5)
+                if 'exp_hessian_diag_sq' in state: state['exp_hessian_diag_sq'].mul_(0.5)
+        elif opt_type == 'kfac' and hasattr(self.optim, 'reset_stats'):
+            self.optim.reset_stats()
+
     def inject_noise(self):
         """
         Adds a small amount of random noise to the parameters of the network
@@ -482,6 +554,13 @@ class IncrementalCIFARExperiment(Experiment):
 
             if self.current_num_classes == self.num_classes: return
 
+            # ── SDP intervention at task boundary ──
+            if self.sdp_gamma > 0:
+                cond_nums = apply_sdp(self.net, self.sdp_gamma)
+                self._print("\tSDP applied: avg cond = {0:.1f}".format(
+                    sum(cond_nums) / max(len(cond_nums), 1)))
+                self._fade_optimizer_state_after_sdp()
+
             increase = 5
             self.current_num_classes += increase
             training_data.select_new_partition(self.all_classes[:self.current_num_classes])
@@ -489,6 +568,15 @@ class IncrementalCIFARExperiment(Experiment):
             val_data.select_new_partition(self.all_classes[:self.current_num_classes])
 
             self._print("\tNew class added...")
+
+            # Reset EMA at task boundary
+            if self.ema is not None:
+                self.ema.reset(self.net)
+
+            # Reset KFAC stats at task boundary
+            if self.optimizer_type == 'kfac' and hasattr(self.optim, 'reset_stats'):
+                self.optim.reset_stats()
+                self._print("\t[K-FAC] task boundary: stats reset")
 
             # ── AFTER task: compute metrics using dashboard ──
             task_boundary_idx = (self.current_epoch // self.class_increase_frequency) - 1

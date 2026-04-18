@@ -9,6 +9,9 @@ from lop.algos.bp import Backprop
 from lop.nets.conv_net import ConvNet
 from lop.nets.conv_net2 import ConvNet2
 from lop.algos.convCBP import ConvCBP
+from lop.algos.sdp import apply_sdp
+from lop.algos.ema import EMAWrapper
+from lop.optimizers import get_optimizer
 from torch.nn.functional import softmax
 from lop.nets.linear import MyLinear
 from lop.utils.miscellaneous import nll_accuracy as accuracy
@@ -38,6 +41,78 @@ def load_imagenet(classes=[]):
 def save_data(data, data_file):
     with open(data_file, 'wb+') as f:
         pickle.dump(data, f)
+
+
+class SecondOrderLearnerConv:
+    """Learner that wraps second-order optimizers for ConvNet ImageNet experiments.
+    Mirrors Backprop.learn() interface."""
+
+    def __init__(self, net, optimizer_type, step_size, weight_decay=0.0,
+                 optimizer_params=None, device='cpu', to_perturb=False, perturb_scale=0.1):
+        import torch.nn.functional as F
+        self.net = net
+        self.device = device
+        self.optimizer_type = optimizer_type.lower()
+        self.to_perturb = to_perturb
+        self.perturb_scale = perturb_scale
+        self.previous_features = None
+        self.loss_func = F.cross_entropy
+
+        kwargs = dict(lr=step_size, weight_decay=weight_decay)
+        if optimizer_params:
+            kwargs.update(optimizer_params)
+        self.opt = get_optimizer(optimizer_type, net, **kwargs)
+
+    def learn(self, x, target):
+        if self.optimizer_type == 'sassha':
+            return self._learn_sassha(x, target)
+        elif self.optimizer_type in ('adahessian', 'sophia', 'sophiah'):
+            return self._learn_hessian(x, target)
+        else:
+            return self._learn_standard(x, target)
+
+    def _learn_standard(self, x, target):
+        self.opt.zero_grad()
+        output, features = self.net.predict(x=x)
+        self.previous_features = features
+        loss = self.loss_func(output, target)
+        loss.backward()
+        self.opt.step()
+        return loss.detach(), output.detach()
+
+    def _learn_hessian(self, x, target):
+        self.opt.zero_grad()
+        output, features = self.net.predict(x=x)
+        self.previous_features = features
+        loss = self.loss_func(output, target)
+        loss.backward(create_graph=True)
+        self.opt.step()
+        self.opt.zero_grad(set_to_none=True)
+        return loss.detach(), output.detach()
+
+    def _learn_sassha(self, x, target):
+        self.opt.zero_grad()
+        output, features = self.net.predict(x=x)
+        self.previous_features = features
+        loss = self.loss_func(output, target)
+        loss.backward()
+        self.opt.perturb_weights(zero_grad=True)
+        output_pert, _ = self.net.predict(x=x)
+        loss_pert = self.loss_func(output_pert, target)
+        loss_pert.backward(create_graph=True)
+        self.opt.unperturb()
+        self.opt.step()
+        self.opt.zero_grad(set_to_none=True)
+        return loss.detach(), output.detach()
+
+    def fade_optimizer_state(self):
+        if self.optimizer_type in ('adahessian', 'sophia', 'sophiah', 'sassha'):
+            for state in self.opt.state.values():
+                if 'exp_avg' in state: state['exp_avg'].mul_(0.5)
+                if 'exp_hessian_diag' in state: state['exp_hessian_diag'].mul_(0.5)
+                if 'exp_hessian_diag_sq' in state: state['exp_hessian_diag_sq'].mul_(0.5)
+        elif self.optimizer_type == 'kfac' and hasattr(self.opt, 'reset_stats'):
+            self.opt.reset_stats()
 
 
 def repeat_expr(params: {}):
@@ -115,6 +190,25 @@ def repeat_expr(params: {}):
             device=dev,
             maturity_threshold=maturity_threshold,
         )
+    elif agent_type == 'secondorder':
+        optimizer_type = params.get('optimizer_type', 'adahessian')
+        optimizer_params = params.get('optimizer_params', {})
+        sdp_gamma = params.get('sdp_gamma', 0.0)
+        use_ema = params.get('use_ema', False)
+        ema_decay = params.get('ema_decay', 0.999)
+        learner = SecondOrderLearnerConv(
+            net=net,
+            optimizer_type=optimizer_type,
+            step_size=step_size,
+            weight_decay=weight_decay,
+            optimizer_params=optimizer_params,
+            device=dev,
+            to_perturb=(perturb_scale != 0),
+            perturb_scale=perturb_scale,
+        )
+        ema = EMAWrapper(net, ema_decay) if use_ema else None
+    else:
+        raise ValueError(f"Unknown agent_type: {agent_type}")
 
     with open('class_order', 'rb+') as f:
         class_order = pickle.load(f)
@@ -171,6 +265,11 @@ def repeat_expr(params: {}):
                 loss, network_output = learner.learn(x=batch_x, target=batch_y)
                 task_loss_sum += loss.item() if hasattr(loss, 'item') else float(loss)
                 task_loss_count += 1
+
+                # EMA update (only for secondorder agent)
+                if agent_type == 'secondorder' and ema is not None:
+                    ema.update(net)
+
                 with torch.no_grad():
                     new_train_accuracies[epoch_iter] = accuracy(softmax(network_output, dim=1), batch_y).cpu()
                     epoch_iter += 1
@@ -205,6 +304,13 @@ def repeat_expr(params: {}):
 
         print_task_summary(task_idx, before_metrics, after_metrics,
                            task_loss, train_acc, test_acc)
+
+        # SDP at task boundary (only for secondorder agent)
+        if agent_type == 'secondorder' and sdp_gamma > 0:
+            apply_sdp(net, sdp_gamma)
+            learner.fade_optimizer_state()
+            if ema is not None:
+                ema.reset(net)
 
         if task_idx % save_after_every_n_tasks == 0:
             save_data(data={

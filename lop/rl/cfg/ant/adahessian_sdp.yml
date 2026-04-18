@@ -1,0 +1,26 @@
+# AdaHessian + SDP config for PPO on Ant-v4
+env_name: 'Ant-v4'
+optimizer: 'adahessian'
+lr: 0.001
+betas: [0.9, 0.999]
+weight_decay: 0.0005
+eps: 0.001
+hessian_power: 0.5
+lazy_hessian: 1
+n_samples: 1
+
+sdp_gamma: 0.3
+sdp_interval: 100000
+
+act_type: 'ReLU'
+n_steps: 1e7
+g: 0.99
+lm: 0.95
+bs: 2048
+n_itrs: 10
+n_slices: 16
+clip_eps: 0.2
+h_dim: [256, 256]
+init: 'lecun'
+grad_clip: 1.0
+dir: 'results/rl_2nd/adahessian_sdp/'

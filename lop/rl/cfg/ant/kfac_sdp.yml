@@ -1,0 +1,25 @@
+# K-FAC NGD + SDP config for PPO on Ant-v4
+env_name: 'Ant-v4'
+optimizer: 'kfac'
+lr: 0.001
+damping: 0.001
+weight_decay: 0.0
+T_inv: 50
+alpha: 0.95
+max_grad_norm: 1.0
+
+sdp_gamma: 0.3
+sdp_interval: 100000
+
+act_type: 'ReLU'
+n_steps: 1e7
+g: 0.99
+lm: 0.95
+bs: 2048
+n_itrs: 10
+n_slices: 16
+clip_eps: 0.2
+h_dim: [256, 256]
+init: 'lecun'
+grad_clip: 1.0
+dir: 'results/rl_2nd/kfac_sdp/'

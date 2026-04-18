@@ -7,6 +7,9 @@ import numpy as np
 from tqdm import tqdm
 from lop.algos.bp import Backprop
 from lop.algos.cbp import ContinualBackprop
+from lop.algos.sdp import apply_sdp
+from lop.algos.ema import EMAWrapper
+from lop.optimizers import get_optimizer
 from lop.nets.linear import MyLinear
 from torch.nn.functional import softmax
 from lop.nets.deep_ffnn import DeepFFNN
@@ -18,6 +21,97 @@ def _get_features(net, x):
     """Get model output and features for metric computation."""
     output, features = net.predict(x)
     return output, features
+
+
+class SecondOrderLearner:
+    """Learner that wraps second-order optimizers (AdaHessian, SophiaH, KFAC, SASSHA)
+    for the MNIST experiment. Mirrors the interface of Backprop.learn()."""
+
+    def __init__(self, net, optimizer_type, step_size, weight_decay=0.0,
+                 optimizer_params=None, device='cpu', to_perturb=False, perturb_scale=0.1):
+        import torch.nn.functional as F
+        self.net = net
+        self.device = device
+        self.optimizer_type = optimizer_type.lower()
+        self.to_perturb = to_perturb
+        self.perturb_scale = perturb_scale
+        self.previous_features = None
+        self.loss_func = F.cross_entropy
+
+        kwargs = dict(lr=step_size, weight_decay=weight_decay)
+        if optimizer_params:
+            kwargs.update(optimizer_params)
+        self.opt = get_optimizer(optimizer_type, net, **kwargs)
+
+    def learn(self, x, target):
+        """One training step. Returns (loss, output)."""
+        if self.optimizer_type == 'sassha':
+            return self._learn_sassha(x, target)
+        elif self.optimizer_type in ('adahessian', 'sophia', 'sophiah'):
+            return self._learn_hessian(x, target)
+        else:
+            return self._learn_standard(x, target)
+
+    def _learn_standard(self, x, target):
+        """Standard forward-backward for SGD/Adam/KFAC."""
+        self.opt.zero_grad()
+        output, features = self.net.predict(x=x)
+        self.previous_features = features
+        loss = self.loss_func(output, target)
+        loss.backward()
+        self.opt.step()
+        if self.to_perturb:
+            self._perturb()
+        return loss.detach(), output.detach()
+
+    def _learn_hessian(self, x, target):
+        """AdaHessian/SophiaH: need create_graph=True."""
+        self.opt.zero_grad()
+        output, features = self.net.predict(x=x)
+        self.previous_features = features
+        loss = self.loss_func(output, target)
+        loss.backward(create_graph=True)
+        self.opt.step()
+        self.opt.zero_grad(set_to_none=True)
+        if self.to_perturb:
+            self._perturb()
+        return loss.detach(), output.detach()
+
+    def _learn_sassha(self, x, target):
+        """SASSHA two-pass protocol."""
+        self.opt.zero_grad()
+        output, features = self.net.predict(x=x)
+        self.previous_features = features
+        loss = self.loss_func(output, target)
+        loss.backward()
+        self.opt.perturb_weights(zero_grad=True)
+        output_pert, _ = self.net.predict(x=x)
+        loss_pert = self.loss_func(output_pert, target)
+        loss_pert.backward(create_graph=True)
+        self.opt.unperturb()
+        self.opt.step()
+        self.opt.zero_grad(set_to_none=True)
+        if self.to_perturb:
+            self._perturb()
+        return loss.detach(), output.detach()
+
+    def _perturb(self):
+        with torch.no_grad():
+            for i in range(int(len(self.net.layers)/2)+1):
+                self.net.layers[i * 2].bias += \
+                    torch.empty(self.net.layers[i * 2].bias.shape, device=self.device).normal_(mean=0, std=self.perturb_scale)
+                self.net.layers[i * 2].weight += \
+                    torch.empty(self.net.layers[i * 2].weight.shape, device=self.device).normal_(mean=0, std=self.perturb_scale)
+
+    def fade_optimizer_state(self):
+        """Fade optimizer state after SDP."""
+        if self.optimizer_type in ('adahessian', 'sophia', 'sophiah', 'sassha'):
+            for state in self.opt.state.values():
+                if 'exp_avg' in state: state['exp_avg'].mul_(0.5)
+                if 'exp_hessian_diag' in state: state['exp_hessian_diag'].mul_(0.5)
+                if 'exp_hessian_diag_sq' in state: state['exp_hessian_diag_sq'].mul_(0.5)
+        elif self.optimizer_type == 'kfac' and hasattr(self.opt, 'reset_stats'):
+            self.opt.reset_stats()
 
 
 def online_expr(params: {}):
@@ -112,6 +206,25 @@ def online_expr(params: {}):
             accumulate=True,
             device=dev,
         )
+    elif agent_type in ['secondorder']:
+        optimizer_type = params.get('optimizer_type', 'adahessian')
+        optimizer_params = params.get('optimizer_params', {})
+        sdp_gamma = params.get('sdp_gamma', 0.0)
+        use_ema = params.get('use_ema', False)
+        ema_decay = params.get('ema_decay', 0.999)
+        learner = SecondOrderLearner(
+            net=net,
+            optimizer_type=optimizer_type,
+            step_size=step_size,
+            weight_decay=weight_decay,
+            optimizer_params=optimizer_params,
+            device=dev,
+            to_perturb=to_perturb,
+            perturb_scale=perturb_scale,
+        )
+        ema = EMAWrapper(net, ema_decay) if use_ema else None
+    else:
+        raise ValueError(f"Unknown agent_type: {agent_type}")
 
     accuracy = nll_accuracy
     examples_per_task = images_per_class * classes_per_task
@@ -168,6 +281,10 @@ def online_expr(params: {}):
             task_loss_sum += loss.item() if hasattr(loss, 'item') else float(loss)
             task_loss_count += 1
 
+            # EMA update (only for secondorder agent)
+            if agent_type == 'secondorder' and ema is not None:
+                ema.update(net)
+
             if to_log and agent_type != 'linear':
                 for idx, layer_idx in enumerate(learner.net.layers_to_log):
                     weight_mag_sum[iter][idx] = learner.net.layers[layer_idx].weight.data.abs().sum()
@@ -200,6 +317,13 @@ def online_expr(params: {}):
             # ── Print full summary ──
             print_task_summary(task_idx, before_metrics, after_metrics,
                                task_loss, train_acc, test_acc)
+
+            # SDP at task boundary (only for secondorder agent)
+            if agent_type == 'secondorder' and sdp_gamma > 0:
+                apply_sdp(net, sdp_gamma)
+                learner.fade_optimizer_state()
+                if ema is not None:
+                    ema.reset(net)
         else:
             print(f'[Task {task_idx}] loss: {task_loss:.4f}, '
                   f'train_acc: {train_acc:.4f}, test_acc: {test_acc:.4f}')

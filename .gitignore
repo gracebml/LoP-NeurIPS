@@ -19,3 +19,9 @@ logs/
 *.tar
 *.npy
 *.npz
+
+*.whl
+
+lop-packages/
+
+__pycache__/

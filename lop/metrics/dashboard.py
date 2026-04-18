@@ -56,7 +56,7 @@ def compute_task_metrics(model, ref_batch, features, prev_ref_outputs=None,
     """
     results = {}
 
-    # ── Per-layer representation metrics ──
+    # Per-layer representation metrics
     eff_ranks = []
     stable_ranks = []
     approx_ranks = []

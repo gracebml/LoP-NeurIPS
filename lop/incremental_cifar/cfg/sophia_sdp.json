@@ -1,0 +1,28 @@
+{
+  "_model_description_": "SophiaH + SDP (second-order optimizer experiment)",
+
+  "data_path": "",
+  "results_dir": "",
+  "experiment_name": "sophia_sdp",
+  "num_workers": 12,
+
+  "stepsize": 0.01,
+  "weight_decay": 0.0005,
+  "momentum": 0.0,
+
+  "optimizer_type": "sophia",
+  "optimizer_params": {
+    "betas": [0.965, 0.99],
+    "eps": 0.0001,
+    "clip_threshold": 1.0,
+    "lazy_hessian": 10,
+    "n_samples": 1
+  },
+  "sdp_gamma": 0.3,
+
+  "noise_std": 0.0,
+  "use_cbp": false,
+  "reset_head": false,
+  "reset_network": false,
+  "early_stopping": true
+}

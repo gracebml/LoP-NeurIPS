@@ -1,0 +1,28 @@
+{
+  "_model_description_": "AdaHessian + SDP (second-order optimizer experiment)",
+
+  "data_path": "",
+  "results_dir": "",
+  "experiment_name": "adahessian_sdp",
+  "num_workers": 12,
+
+  "stepsize": 0.15,
+  "weight_decay": 0.0001,
+  "momentum": 0.0,
+
+  "optimizer_type": "adahessian",
+  "optimizer_params": {
+    "betas": [0.9, 0.999],
+    "eps": 0.0001,
+    "hessian_power": 0.5,
+    "lazy_hessian": 10,
+    "n_samples": 1
+  },
+  "sdp_gamma": 0.3,
+
+  "noise_std": 0.0,
+  "use_cbp": false,
+  "reset_head": false,
+  "reset_network": false,
+  "early_stopping": true
+}

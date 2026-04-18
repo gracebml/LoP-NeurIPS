@@ -1,0 +1,27 @@
+{
+  "_model_description_": "KFAC-NGD + SDP (second-order optimizer experiment)",
+
+  "data_path": "",
+  "results_dir": "",
+  "experiment_name": "kfac_sdp",
+  "num_workers": 12,
+
+  "stepsize": 0.01,
+  "weight_decay": 0.0,
+  "momentum": 0.0,
+
+  "optimizer_type": "kfac",
+  "optimizer_params": {
+    "damping": 0.001,
+    "T_inv": 100,
+    "alpha": 0.95,
+    "max_grad_norm": 0.0
+  },
+  "sdp_gamma": 0.3,
+
+  "noise_std": 0.0,
+  "use_cbp": false,
+  "reset_head": false,
+  "reset_network": false,
+  "early_stopping": true
+}
