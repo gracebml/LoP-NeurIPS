@@ -427,6 +427,31 @@ class IncrementalCIFARExperiment(Experiment):
                                        epoch_runtime=epoch_end_time - epoch_start_time)
 
             self.current_epoch += 1
+
+            # --- 50 Epoch Condensed Metric Tracking ---
+            if self.current_epoch > 0 and (self.current_epoch % 50) == 0 and (self.current_epoch % self.class_increase_frequency) != 0:
+                self.net.eval()
+                ref_batch = self._ntk_ref_batch
+                features = []
+                self.net.forward(ref_batch, feature_list=features)
+                from lop.metrics.dashboard import compute_task_metrics
+                tmp_metrics = compute_task_metrics(
+                    self.net, ref_batch, features,
+                    prev_ref_outputs=self._prev_ref_outputs, loss_type='ce',
+                    network_type='cnn')
+                
+                task_idx = self.current_epoch // self.class_increase_frequency
+                loss_val = self.results_dict["test_loss_per_epoch"][e].item()
+                acc_val = self.results_dict["test_accuracy_per_epoch"][e].item()
+                
+                self._print(f"\n  [Epoch {self.current_epoch} | Task {task_idx}] loss: {loss_val:.4f} | acc: {acc_val:.4f} | "
+                            f"dor: {tmp_metrics['dormant_proportion']:.4f} | "
+                            f"avg_w: {tmp_metrics['avg_weight_mag']:.4f} | "
+                            f"sb_rank: {tmp_metrics['stable_rank'][-1] if tmp_metrics['stable_rank'] else 0} | "
+                            f"eff_rank: {tmp_metrics['eff_rank'][-1]:.2f} | "
+                            f"ntk_cond: {tmp_metrics['ntk_cond']:.2f}\n")
+                self.net.train()
+
             self.extend_classes(training_data, test_data, val_data)
 
             if self.current_epoch % self.checkpoint_save_frequency == 0:
