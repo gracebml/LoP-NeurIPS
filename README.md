@@ -1,15 +1,20 @@
-# Loss of Plasticity (LoP) in Deep Continual Learning
+# Can the optimizer itself mitigate Loss of Plasticity (LoP)?
 
-This repository contains the refactored and standardized official implementation for research on the **Loss of Plasticity (LoP)** phenomenon in Deep Neural Networks. It provides a unified framework to train, monitor, and evaluate continual learning agents across various domains, tracking how the ability to learn new representations decays over time.
+This repository contains the refactored and standardized official implementation for research exploring the question: **Can the optimizer itself mitigate Loss of Plasticity?** 
 
-## Key Features & Standardization
+While existing solutions to the Loss of Plasticity (LoP) phenomenon typically rely on structural interventions (e.g., continually injecting new neurons, resetting dead units, or heavily regularizing the network), this work investigates whether **second-order optimization methods** (such as AdaHessian, SophiaH, and Sassha) naturally maintain network plasticity over long continual learning horizons.
 
-The codebase has been entirely unified into a single `lop/` package to ensure consistent tracking of plasticity metrics across all experiments:
+## Research Scope & Framework
 
-- **Centralized Metric Dashboard (`lop.metrics.dashboard`)**: A unified metrics engine computing 11 core plasticity diagnostics (Effective Rank, Stable Rank, Approximate Rank, Dormant Proportion, Layer-wise Dormancy, Weight Magnitude, NTK Churn, NTK Eigenspectrum Cond/Rank, plus Accuracy and Loss) at every task boundary.
-- **Unified Data Loaders (`lop.data`)**: Standardized data ingestion supporting local environments and direct Kaggle notebook execution.
-- **Unified Optimizers (`lop.optimizers`)**: Advanced custom optimizers (AdaHessian, SophiaH, Sassha) modularized for plug-and-play use.
-- **Centralized Algorithms (`lop.algos`)**: Common adaptation and optimization algorithms, including standard Backprop, Continual Backprop (CBP), Generate-and-Test (GnT), and Spectral Decoupling (SDP).
+This codebase provides a unified framework to train, monitor, and evaluate continual learning agents across sequential tasks. It tracks how representations and optimization landscapes evolve by computing state-of-the-art plasticity diagnostics.
+
+### Key Contributions in this Repository:
+- **Second-Order Optimizer Implementations (`lop.optimizers`)**: highly-optimized, modular PyTorch implementations of advanced optimizers including **AdaHessian**, **SophiaH**, and **Sassha**, designed for plug-and-play use in continual learning loops.
+- **Centralized Metric Dashboard (`lop.metrics.dashboard`)**: A unified engine that computes 11 core plasticity diagnostics at the boundary of every sequentially learned task:
+  - **Representation Rank**: Effective, Stable, and Approximate Rank (SVD-based breakdown of representation collapse).
+  - **Network Capacity**: Dormant Proportion (dead unit tracking) and Average Weight Magnitude.
+  - **Landscape Diagnostics**: NTK Churn and Empirical NTK Eigenspectrum Conditioning (linking optimization curvature to plasticity).
+- **Standardized Continual Benchmarks**: unified execution for Permuted MNIST, Incremental CIFAR-100, and standard sequentially arriving subsets for Tiny ImageNet.
 
 ## 📂 Repository Structure
 
@@ -24,9 +29,9 @@ The codebase has been entirely unified into a single `lop/` package to ensure co
     ├── envs/                   # RL environments
     ├── imagenet/               # TinyImageNet experiments
     ├── incremental_cifar/      # CIFAR-100 incremental learning experiments
-    ├── metrics/                # 📊 Centralized Plasticity Metrics (Dashboard, Rank, Dormant, NTK)
+    ├── metrics/                # Centralized Plasticity Metrics (Dashboard, Rank, Dormant, NTK)
     ├── nets/                   # Network Architectures (DeepFFNN, ConvNet, ResNets)
-    ├── optimizers/             # Standardized Custom Optimizers
+    ├── optimizers/             # Second-order optimizers (AdaHessian, SophiaH, Sassha...)
     ├── permuted_mnist/         # Permuted MNIST experiments
     ├── rl/                     # Reinforcement Learning experiments
     ├── utils/                  # Miscellaneous utilities
@@ -36,28 +41,28 @@ The codebase has been entirely unified into a single `lop/` package to ensure co
 ## Usage
 
 ### 1. Download Datasets
-Before running experiments, run the standardized data download script to generate necessary dataset pickles:
+Before running experiments, fetch and format the necessary benchmarks:
 
 ```bash
 python download_data.py
 ```
 
 ### 2. Running Experiments
-All experiments are executed via the unified `main.py` entry point. You must specify the experiment name and a config JSON file:
+All experiments are executed via `main.py`. The optimizer and continual learning settings are defined in the config JSON file:
 
 ```bash
-# Permuted MNIST
+# Permuted MNIST (Test optimizer robustness to abrupt permutation shifts)
 python main.py permuted_mnist -c lop/permuted_mnist/temp_cfg/0.json
 
-# Incremental CIFAR-100
+# Incremental CIFAR-100 (Test optimizer capability mitigating LoP in class-incremental CNNs)
 python main.py incremental_cifar -c lop/incremental_cifar/temp_cfg/0.json
 
-# Tiny ImageNet
+# ImageNet
 python main.py imagenet -c lop/imagenet/temp_cfg/0.json
 ```
 
-### 3. Metric Tracking
-Experiments automatically utilize the `lop.metrics.dashboard`. At each task boundary (e.g., when transitioning to a new permutation or a new class subset), the console will print a unified summary:
+### 3. Metric Tracking & Dashboard
+At each task boundary, the framework will automatically halt, run reference batches through the dashboard, and compute the second-order landscape and capacity metrics to measure the exact state of plasticity:
 
 ```text
 ======================================================================
@@ -74,12 +79,4 @@ Experiments automatically utilize the `lop.metrics.dashboard`. At each task boun
   dormant_proportion:  0.0000 -> 0.0000
 ======================================================================
 ```
-Full per-layer lists are preserved inside the output dictionaries (`metrics_before`, `metrics_after`) for post-run analysis and visualizations via `lop/viz/`.
-
-## Plasticity Metrics
-
-The codebase standardizes the core diagnostics outlined in LoP literature:
-- **Representation Rank (`lop.metrics.rank`)**: Effective, Stable, and Approximate ranks computed via SVD on layer activations to diagnose representation collapse.
-- **Dormant Neurons (`lop.metrics.dormant`)**: Fraction of units with negligible activations, isolated for both FFNNs and CNNs.
-- **Capacity Tracking (`lop.metrics.weight_norm`)**: Average magnitude of parameters tracking model saturation.
-- **Gradient/Kernel Diagnostics (`lop.metrics.ntk_churn`)**: Neural Tangent Kernel (NTK) Churn mapping optimization drift, and Eigenspectrum characteristics defining trainability.
+Full per-layer rank progression and dormant counts are seamlessly cached as lists in `metrics_before` and `metrics_after` arrays inside the saved `pickle` results for later high-fidelity plotting in `lop/viz/`.
