@@ -13,7 +13,7 @@ import os
 import shutil
 
 INPUT_SRC = '/kaggle/input/lop-src' 
-WORKING_DIR = '/kaggle/working/LoP-NeurIPS'
+WORKING_DIR = '/kaggle/working/lop-src'
 
 if not os.path.exists(WORKING_DIR):
     shutil.copytree(INPUT_SRC, WORKING_DIR)
