@@ -650,9 +650,9 @@ def main(arguments=None):
 
     file_path = os.path.dirname(os.path.abspath(__file__))
     if "data_path" not in experiment_parameters.keys() or experiment_parameters["data_path"] == "":
-        experiment_parameters["data_path"] = os.path.join(file_path, "data")
+        experiment_parameters["data_path"] = "./data"
     if "results_dir" not in experiment_parameters.keys() or experiment_parameters["results_dir"] == "":
-        experiment_parameters["results_dir"] = os.path.join(file_path, "results")
+        experiment_parameters["results_dir"] = "./results"
     if "experiment_name" not in experiment_parameters.keys() or experiment_parameters["experiment_name"] == "":
         experiment_parameters["experiment_name"] = os.path.splitext(os.path.basename(args.config))[0]
 
