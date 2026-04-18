@@ -2,6 +2,13 @@
 
 This repository contains the refactored and standardized official implementation for research exploring the question: **Can the optimizer itself mitigate Loss of Plasticity?** 
 
+### Heritage & Acknowledgment
+This codebase inherits from and significantly extends the official open-source repository of the Nature (August 2024) paper **"Loss of Plasticity in Deep Continual Learning"** by Shibhansh Dohare et al. 
+- **Original Paper**: [Nature DOI: 10.1038/s41586-024-07711-7](https://www.nature.com/articles/s41586-024-07711-7)
+- **Original DeepMind Source**: [https://github.com/google-deepmind/loss-of-plasticity](https://github.com/google-deepmind/loss-of-plasticity)
+
+While the original repository from DeepMind established rigorous continuous learning environments (Permuted MNIST, Incremental CIFAR, ImageNet, RL Ant) and primarily explored structural interventions like Continual Backprop (CBP) and Shrink and Perturb, this work integrates second-order optimization and specialized metrics to evaluate them directly inside the same established boundaries.
+
 While existing solutions to the Loss of Plasticity (LoP) phenomenon typically rely on structural interventions (e.g., continually injecting new neurons, resetting dead units, or heavily regularizing the network), this work investigates whether **second-order optimization methods** (such as AdaHessian, SophiaH, and Sassha) naturally maintain network plasticity over long continual learning horizons.
 
 ## Research Scope & Framework
@@ -18,50 +25,61 @@ This codebase provides a unified framework to train, monitor, and evaluate conti
 
 ## 📂 Repository Structure
 
+The underlying experimental structure largely follows *Dohare et al.*, wrapped to support our new optimizer factories, Kaggle environments, and the metrics dashboard:
+
 ```text
 .
 ├── data/                       # Downloaded datasets
 ├── download_data.py            # Script to fetch CIFAR, MNIST, TinyImageNet, etc.
-├── main.py                     # Unified entry point for all experiments
-└── lop/                        # Core Package
-    ├── algos/                  # Learning algorithms (BP, Continual BP, GnT, SDP)
-    ├── data/                   # Unified DataLoaders
-    ├── envs/                   # RL environments
-    ├── imagenet/               # TinyImageNet experiments
-    ├── incremental_cifar/      # CIFAR-100 incremental learning experiments
-    ├── metrics/                # Centralized Plasticity Metrics (Dashboard, Rank, Dormant, NTK)
-    ├── nets/                   # Network Architectures (DeepFFNN, ConvNet, ResNets)
-    ├── optimizers/             # Second-order optimizers (AdaHessian, SophiaH, Sassha...)
-    ├── permuted_mnist/         # Permuted MNIST experiments
-    ├── rl/                     # Reinforcement Learning experiments
-    ├── utils/                  # Miscellaneous utilities
-    └── viz/                    # Data visualization scripts
+├── run-expr.py                 # Kaggle-ready Jupytext executor script for offline experiments
+├── lop-packages/               # Offline wheel dependencies for Kaggle
+└── lop-src/                    # Core Source Code package
+    ├── main.py                 # Unified entry point for all standard experiments
+    └── lop/                    # Core Package
+        ├── algos/              # Learning algorithms (BP, Continual BP, GnT, SDP, EMA)
+        ├── data/               # Unified DataLoaders
+        ├── envs/               # RL environments
+        ├── imagenet/           # TinyImageNet experiments
+        ├── incremental_cifar/  # CIFAR-100 incremental learning experiments
+        ├── metrics/            # Centralized Plasticity Metrics (Dashboard, Rank, Dormant, NTK)
+        ├── nets/               # Network Architectures (DeepFFNN, ConvNet, ResNets)
+        ├── optimizers/         # Second-order optimizers (AdaHessian, SophiaH, Sassha...)
+        ├── permuted_mnist/     # Permuted MNIST experiments
+        ├── rl/                 # Reinforcement Learning experiments (run_ppo_2nd.py)
+        ├── utils/              # Miscellaneous utilities
+        └── viz/                # Data visualization scripts
 ```
 
 ## Usage
 
-### 1. Download Datasets
-Before running experiments, fetch and format the necessary benchmarks:
+### 1. Kaggle Offline Execution
+Use `run-expr.py` (a Jupytext notebook). It automatically configures datasets and executes your offline code against `lop-src/`. 
+
+### 2. Download Datasets (Local)
+Before running experiments locally, fetch and format the necessary benchmarks:
 
 ```bash
 python download_data.py
 ```
 
-### 2. Running Experiments
-All experiments are executed via `main.py`. The optimizer and continual learning settings are defined in the config JSON file:
+### 3. Running Experiments
+All standardized experiments are executed via scripts inside `lop-src/`. The optimizer and continual learning settings are defined in the specific config files:
 
 ```bash
 # Permuted MNIST (Test optimizer robustness to abrupt permutation shifts)
-python main.py permuted_mnist -c lop/permuted_mnist/temp_cfg/0.json
+python lop-src/main.py mnist -c lop-src/lop/permuted_mnist/cfg/secondorder_sassha.json
 
 # Incremental CIFAR-100 (Test optimizer capability mitigating LoP in class-incremental CNNs)
-python main.py incremental_cifar -c lop/incremental_cifar/temp_cfg/0.json
+python lop-src/main.py cifar -c lop-src/lop/incremental_cifar/cfg/sassha_sdp.json --index 0
 
 # ImageNet
-python main.py imagenet -c lop/imagenet/temp_cfg/0.json
+python lop-src/main.py imagenet -c lop-src/lop/imagenet/cfg/secondorder_sassha.json
+
+# Reinforcement Learning Agent (Ant-v4)
+python lop-src/lop/rl/run_ppo_2nd.py -c lop-src/lop/rl/cfg/ant/sassha_sdp.yml -s 1
 ```
 
-### 3. Metric Tracking & Dashboard
+### 4. Metric Tracking & Dashboard
 At each task boundary, the framework will automatically halt, run reference batches through the dashboard, and compute the second-order landscape and capacity metrics to measure the exact state of plasticity:
 
 ```text
@@ -79,4 +97,4 @@ At each task boundary, the framework will automatically halt, run reference batc
   dormant_proportion:  0.0000 -> 0.0000
 ======================================================================
 ```
-Full per-layer rank progression and dormant counts are seamlessly cached as lists in `metrics_before` and `metrics_after` arrays inside the saved `pickle` results for later high-fidelity plotting in `lop/viz/`.
+Full per-layer rank progression and dormant counts are seamlessly cached as lists in `metrics_before` and `metrics_after` arrays inside the saved `pickle` results for later high-fidelity plotting in `lop-src/lop/viz/`.
